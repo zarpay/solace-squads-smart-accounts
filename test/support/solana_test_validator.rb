@@ -4,13 +4,14 @@
 # from mainnet-beta. Executed at require time by test_helper.rb; tears down via
 # Minitest.after_run when the test suite finishes.
 
-# Full command passed to Process.spawn — clones the Squads program from
-# mainnet-beta so integration tests run against the real program bytecode.
+# Full command passed to Process.spawn — clones the Squads program and its
+# global program config account from mainnet-beta so integration tests run
+# against the real program bytecode and config state (treasury address, fees).
 SQUADS_VALIDATOR_CMD = [
   'solana-test-validator',
   '--clone-upgradeable-program', Solace::SquadsSmartAccounts::PROGRAM_ID,
-  '--url', 'mainnet-beta',
-  '--reset'
+  '--clone', Solace::SquadsSmartAccounts::PROGRAM_CONFIG_ADDRESS,
+  '--url', 'mainnet-beta'
 ].freeze
 
 # Log destinations — written to /tmp so the project tree stays clean.
@@ -18,8 +19,9 @@ SQUADS_VALIDATOR_LOG = '/tmp/solace-squads-validator.log'
 SQUADS_VALIDATOR_ERR = '/tmp/solace-squads-validator.err.log'
 
 # If a validator is already running (e.g. left over from a previous dev run),
-# skip starting a new one. The grep -v grep strips the grep process itself.
-@validator_pid = `ps aux | grep 'solana-test-val' | grep -v grep`.strip
+# skip starting a new one. Exclude the grep process itself and any defunct
+# (zombie) processes that may linger after a previous test run.
+@validator_pid = `ps aux | grep 'solana-test-val' | grep -v grep | grep -v defunct`.strip
 
 return unless @validator_pid.empty?
 

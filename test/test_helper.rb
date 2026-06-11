@@ -11,5 +11,5 @@ $LOAD_PATH.unshift(File.expand_path(ENV['SOLACE_PATH'], __dir__)) if ENV['SOLACE
 
 require 'solace/squads_smart_accounts'
 
+require_relative 'support/fixtures'
 require_relative 'support/solana_test_validator'
-# Add other supports as needed

@@ -9,5 +9,9 @@ module Solace
     # same program ID since Squads deploys identically across clusters.
     MAINNET_PROGRAM_ID = PROGRAM_ID
     DEVNET_PROGRAM_ID  = PROGRAM_ID
+
+    # PDA for the global program config account, derived from seeds ["smart_account", "program_config"].
+    # Holds the treasury address and smart account creation fee.
+    PROGRAM_CONFIG_ADDRESS = 'GmY9kVi3FhrCUn2MJkzzpE6C5618YoHuGsgqHU78cKus'
   end
 end
