@@ -13,3 +13,4 @@ require 'solace/squads_smart_accounts'
 
 require_relative 'support/fixtures'
 require_relative 'support/solana_test_validator'
+require_relative 'support/bootstrap'

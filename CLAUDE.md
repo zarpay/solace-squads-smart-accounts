@@ -83,9 +83,13 @@ end
 lib/solace/squads_smart_accounts/
 ├── instructions/   # one file per on-chain instruction
 ├── composers/      # one file per composer (mirrors instructions/)
+├── programs/       # Solace::Programs::Base subclasses (PDA derivation, send-and-sign clients)
+├── types/          # account/value types (ProgramConfig, Settings, Permissions, ...)
 ├── idl/            # squads_smart_account_program.json (Anchor IDL)
 └── constants.rb    # PROGRAM_ID (canonical) + MAINNET_PROGRAM_ID / DEVNET_PROGRAM_ID aliases
 ```
+
+PDA derivation belongs in the Program layer (`Solace::Programs::SquadsSmartAccount.get_settings_address`), never in composers — composers receive resolved addresses as params and expose every param/constant through a documented named accessor method.
 
 ## IDL
 
@@ -102,6 +106,6 @@ bundle exec rake          # runs all tests (default task)
 SOLACE_PATH=../solace/lib bundle exec rake  # use local solace checkout
 ```
 
-Tests use Minitest. The test suite automatically starts a local `solana-test-validator` with the Squads program cloned from mainnet-beta, then stops it after the run. Always run the tests after making changes — don't wait for the user to ask.
+Tests use Minitest. The test suite automatically starts a local `solana-test-validator` with a fresh ledger (`--reset`) and the Squads program cloned from mainnet-beta, funds the fixture accounts (`test/support/bootstrap.rb`), then stops the validator after the run. No state persists between runs. Always run the tests after making changes — don't wait for the user to ask.
 
-Integration tests live in `test/` and follow the `*_test.rb` naming convention. The validator support script is at `test/support/solana_test_validator.rb`.
+Integration tests live in `test/` and follow the `*_test.rb` naming convention. The validator support script is at `test/support/solana_test_validator.rb`. If a validator is already running it is reused (and not reset) — kill leftover validators if tests behave strangely.

@@ -79,6 +79,64 @@ module Solace
             Solace::Utils::Codecs.base58_to_bytes(signer.pubkey) + [signer.permission]
           end
       end
+
+      # Decodes a u8 from 1 byte.
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [Integer] Value in range 0..255.
+      def self.decode_u8(stream)
+        stream.read(1).unpack1('C')
+      end
+
+      # Decodes a u16 from 2 little-endian bytes.
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [Integer] Value in range 0..65535.
+      def self.decode_le_u16(stream)
+        stream.read(2).unpack1('S<')
+      end
+
+      # Decodes a u32 from 4 little-endian bytes.
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [Integer] Value in range 0..4294967295.
+      def self.decode_le_u32(stream)
+        stream.read(4).unpack1('L<')
+      end
+
+      # Decodes a u128 from 16 little-endian bytes (two u64 words, low word first).
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [Integer] Value in range 0..2**128-1.
+      def self.decode_le_u128(stream)
+        lo, hi = stream.read(16).unpack('Q<Q<')
+        lo + (hi << 64)
+      end
+
+      # Decodes an Option<publicKey> in Borsh format.
+      # None → nil, Some(key) → base58 pubkey.
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [String, nil] Base58 public key or nil.
+      def self.decode_option_pubkey(stream)
+        return nil if decode_u8(stream).zero?
+
+        Solace::Utils::Codecs.bytes_to_base58(stream.read(32).bytes)
+      end
+
+      # Decodes a Vec<SmartAccountSigner> in Borsh format.
+      # u32 length prefix followed by each signer's 32-byte pubkey + 1-byte permission mask.
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [Array<SquadsSmartAccounts::SmartAccountSigner>]
+      def self.decode_smart_account_signers(stream)
+        Array.new(decode_le_u32(stream)) do
+          SquadsSmartAccounts::SmartAccountSigner.new(
+            pubkey:     Solace::Utils::Codecs.bytes_to_base58(stream.read(32).bytes),
+            permission: decode_u8(stream)
+          )
+        end
+      end
     end
   end
 end

@@ -7,8 +7,13 @@
 # Full command passed to Process.spawn — clones the Squads program and its
 # global program config account from mainnet-beta so integration tests run
 # against the real program bytecode and config state (treasury address, fees).
+# --reset starts from a fresh ledger every run: state never persists between
+# runs, so there is no ledger replay to race against and no stale state to
+# inherit from an uncleanly stopped validator. Fixture accounts are re-funded
+# at suite start by support/bootstrap.rb.
 SQUADS_VALIDATOR_CMD = [
   'solana-test-validator',
+  '--reset',
   '--clone-upgradeable-program', Solace::SquadsSmartAccounts::PROGRAM_ID,
   '--clone', Solace::SquadsSmartAccounts::PROGRAM_CONFIG_ADDRESS,
   '--url', 'mainnet-beta'

@@ -29,11 +29,8 @@ module Solace
 
         io.read(8) # skip 8-byte Anchor discriminator
 
-        # u128 stored as two consecutive little-endian u64 words.
-        lo, hi = io.read(16).unpack('Q<Q<')
-
         new(
-          smart_account_index:        lo + (hi << 64),
+          smart_account_index:        Solace::Utils::Codecs.decode_le_u128(io),
           authority:                  Solace::Utils::Codecs.bytes_to_base58(io.read(32).bytes),
           smart_account_creation_fee: Solace::Utils::Codecs.decode_le_u64(io),
           treasury:                   Solace::Utils::Codecs.bytes_to_base58(io.read(32).bytes)

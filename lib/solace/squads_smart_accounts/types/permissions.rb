@@ -10,6 +10,9 @@ module Solace
     #
     # @example Grant initiate and vote only
     #   Permissions::INITIATE | Permissions::VOTE
+    #
+    # @example Build a mask from permission names
+    #   Permissions.mask(:initiate, :vote)
     module Permissions
       # Permission to initiate (create) new transactions.
       INITIATE = 0b001
@@ -22,6 +25,19 @@ module Solace
 
       # Convenience constant granting all three permissions.
       ALL      = INITIATE | VOTE | EXECUTE
+
+      # Builds a permission bitmask from named permissions.
+      #
+      # @param names [Array<Symbol>] Any of :initiate, :vote, :execute, :all.
+      # @return [Integer] Combined permission bitmask.
+      # @raise [ArgumentError] If a name doesn't correspond to a permission.
+      def self.mask(*names)
+        names.reduce(0) do |mask, name|
+          raise ArgumentError, "unknown permission: #{name.inspect}" unless const_defined?(name.to_s.upcase)
+
+          mask | const_get(name.to_s.upcase)
+        end
+      end
     end
   end
 end
