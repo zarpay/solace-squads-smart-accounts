@@ -2,8 +2,12 @@
 
 module Solace
   module SquadsSmartAccounts
-    # Program IDs for Squads Smart Accounts
-    MAINNET_PROGRAM_ID = 'SMRTzfY6DfH5ik3TKiyLFfXexV8uSG3d2UksSCYdunG'.freeze
-    DEVNET_PROGRAM_ID  = 'SMRTzfY6DfH5ik3TKiyLFfXexV8uSG3d2UksSCYdunG'.freeze
+    # Canonical on-chain program ID for the Squads Smart Account program.
+    PROGRAM_ID = 'SMRTzfY6DfH5ik3TKiyLFfXexV8uSG3d2UksSCYdunG'
+
+    # Cluster-scoped aliases — provided for consistency; both resolve to the
+    # same program ID since Squads deploys identically across clusters.
+    MAINNET_PROGRAM_ID = PROGRAM_ID
+    DEVNET_PROGRAM_ID  = PROGRAM_ID
   end
 end

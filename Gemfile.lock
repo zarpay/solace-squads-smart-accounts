@@ -13,6 +13,8 @@ GEM
     base64 (0.3.0)
     ffi (1.17.4-x86_64-linux-gnu)
     minitest (5.27.0)
+    minitest-hooks (1.5.4)
+      minitest (> 5.3)
     rake (13.4.2)
     rbnacl (7.1.2)
       ffi (~> 1)
@@ -23,6 +25,7 @@ PLATFORMS
 DEPENDENCIES
   base64
   minitest (~> 5.0)
+  minitest-hooks (~> 1.5)
   rake (~> 13.0)
   solace!
 
@@ -31,6 +34,7 @@ CHECKSUMS
   base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
   ffi (1.17.4-x86_64-linux-gnu) sha256=9d3db14c2eae074b382fa9c083fe95aec6e0a1451da249eab096c34002bc752d
   minitest (5.27.0) sha256=2d3b17f8a36fe7801c1adcffdbc38233b938eb0b4966e97a6739055a45fa77d5
+  minitest-hooks (1.5.4) sha256=1254069f3da51fea234dc4ff974108d03d19260ad5c4b78eed9695726a5069b8
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
   rbnacl (7.1.2) sha256=c58433e93b390a7b8c03a9da9e54f2de67e6cc3d6731553265299c6aac889a60
   solace (0.1.4)

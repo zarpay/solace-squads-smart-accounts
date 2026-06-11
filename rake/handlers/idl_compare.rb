@@ -1,14 +1,15 @@
 # frozen_string_literal: true
 
 require 'json'
-require 'open3'
-require_relative '../../lib/solace/squads_smart_accounts/constants'
+require 'net/http'
+require 'uri'
 
 module Rake
   module Handlers
-    # Compares the on-chain Anchor IDL for the Squads Smart Account program
-    # against the local IDL file checked into this repository. Useful for
-    # detecting program upgrades that require updating the local copy.
+    # Compares the upstream IDL for the Squads Smart Account program (fetched
+    # directly from the canonical GitHub source) against the local IDL file
+    # checked into this repository. Useful for detecting program upgrades that
+    # require updating the local copy.
     module IDLCompare
       extend self
 
@@ -16,53 +17,49 @@ module Rake
       # (rake/handlers/ → up two levels).
       PROJECT_ROOT = File.expand_path('../..', __dir__)
 
-      # Runs the comparison and prints a pass/fail result to stdout.
-      #
-      # @param cluster [String] Solana cluster name passed to `anchor idl fetch`
-      #   (e.g. 'mainnet', 'devnet').
-      # @param program_id [String] Base58 program ID to fetch the IDL for.
-      # @return [void]
-      def run(cluster, program_id)
-        onchain_idl = fetch_onchain_idl(cluster, program_id)
-        local_idl   = fetch_local_idl
+      # Canonical IDL source — raw JSON from the upstream GitHub repository.
+      UPSTREAM_IDL_URL = 'https://raw.githubusercontent.com/Squads-Protocol/' \
+                         'smart-account-program/refs/heads/main/idl/' \
+                         'squads_smart_account_program.json'
 
-        if onchain_idl == local_idl
-          puts '✅ Success: Onchain IDL matches local IDL.'
+      # Fetches the upstream IDL and compares it to the local copy, printing a
+      # pass/fail result to stdout.
+      #
+      # @return [void]
+      def run
+        upstream_idl = fetch_upstream_idl
+        local_idl    = fetch_local_idl
+
+        if upstream_idl == local_idl
+          puts '✅ Success: Upstream IDL matches local IDL.'
         else
-          puts '❌ Mismatch: Onchain IDL and local IDL are different.'
+          puts '❌ Mismatch: Upstream IDL and local IDL are different.'
         end
       end
 
       private
 
-      # Fetches and parses the IDL from the deployed on-chain program using the
-      # Anchor CLI. Exits with a non-zero status if `anchor` is not installed or
-      # the fetch fails.
+      # Fetches and parses the IDL JSON from the upstream GitHub repository.
+      # Follows HTTP redirects and exits with a non-zero status on failure.
       #
-      # @param cluster [String] Solana cluster name (e.g. 'mainnet', 'devnet').
-      # @param program_id [String] Base58 program ID to fetch.
       # @return [Hash] Parsed IDL as a Ruby hash.
-      def fetch_onchain_idl(cluster, program_id)
-        # Verify the anchor CLI is available before attempting a network call.
-        _, status = Open3.capture2e('command -v anchor')
-        unless status.success?
-          puts "Warning: 'anchor' CLI not found. Cannot fetch onchain IDL."
-          exit(1)
+      def fetch_upstream_idl
+        puts "Fetching upstream IDL from #{UPSTREAM_IDL_URL}..."
+
+        uri      = URI.parse(UPSTREAM_IDL_URL)
+        response = Net::HTTP.get_response(uri)
+
+        # Follow a single redirect (raw.githubusercontent.com can redirect).
+        if response.is_a?(Net::HTTPRedirection)
+          uri      = URI.parse(response['location'])
+          response = Net::HTTP.get_response(uri)
         end
 
-        puts "Fetching IDL for Program: #{program_id} on #{cluster}..."
-
-        # capture3 returns [stdout, stderr, process_status].
-        stdout, stderr, fetch_status = Open3.capture3(
-          "anchor idl fetch #{program_id} --provider.cluster #{cluster}"
-        )
-
-        unless fetch_status.success?
-          puts "Error fetching IDL: #{stderr.strip}"
-          exit(1)
+        unless response.is_a?(Net::HTTPSuccess)
+          abort "Error fetching upstream IDL: HTTP #{response.code} #{response.message}"
         end
 
-        JSON.parse(stdout)
+        JSON.parse(response.body)
       end
 
       # Reads and parses the local IDL file bundled with this gem.

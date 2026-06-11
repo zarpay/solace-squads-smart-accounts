@@ -57,7 +57,7 @@ module Solace
       def setup_accounts
         account_context.add_writable_signer(params[:payer].to_s)
         account_context.add_writable_nonsigner(params[:multisig].to_s)
-        account_context.add_readonly_nonsigner(SquadsSmartAccounts::MAINNET_PROGRAM_ID)
+        account_context.add_readonly_nonsigner(SquadsSmartAccounts::PROGRAM_ID)
       end
 
       # Called by TransactionComposer with a merged AccountContext.
@@ -67,7 +67,7 @@ module Solace
           param:          params[:param],
           account_a_index: context.index_of(params[:payer].to_s),
           account_b_index: context.index_of(params[:multisig].to_s),
-          program_index:   context.index_of(SquadsSmartAccounts::MAINNET_PROGRAM_ID)
+          program_index:   context.index_of(SquadsSmartAccounts::PROGRAM_ID)
         )
       end
     end
@@ -84,7 +84,7 @@ lib/solace/squads_smart_accounts/
 ├── instructions/   # one file per on-chain instruction
 ├── composers/      # one file per composer (mirrors instructions/)
 ├── idl/            # squads_smart_account_program.json (Anchor IDL)
-└── constants.rb    # MAINNET_PROGRAM_ID / DEVNET_PROGRAM_ID
+└── constants.rb    # PROGRAM_ID (canonical) + MAINNET_PROGRAM_ID / DEVNET_PROGRAM_ID aliases
 ```
 
 ## IDL
@@ -92,11 +92,8 @@ lib/solace/squads_smart_accounts/
 The Anchor IDL at `lib/solace/squads_smart_accounts/idl/squads_smart_account_program.json` is the source of truth for instruction names, accounts, and argument types. Keep it in sync with the deployed program:
 
 ```sh
-rake idl:compare          # compares local IDL to mainnet
-rake idl:compare[devnet]  # compare against devnet
+rake idl:compare   # fetches upstream IDL from GitHub and compares to local copy
 ```
-
-Requires the `anchor` CLI to be installed.
 
 ## Tests
 
@@ -105,4 +102,6 @@ bundle exec rake          # runs all tests (default task)
 SOLACE_PATH=../solace/lib bundle exec rake  # use local solace checkout
 ```
 
-Tests use Minitest. Integration tests that hit a real validator use `test/support/solana_test_validator.rb`.
+Tests use Minitest. The test suite automatically starts a local `solana-test-validator` with the Squads program cloned from mainnet-beta, then stops it after the run. Always run the tests after making changes — don't wait for the user to ask.
+
+Integration tests live in `test/` and follow the `*_test.rb` naming convention. The validator support script is at `test/support/solana_test_validator.rb`.
