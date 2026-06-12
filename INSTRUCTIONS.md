@@ -32,12 +32,21 @@ method on `Solace::Programs::SquadsSmartAccount`.
 - [x] `changeThresholdAsAuthority` — Change the threshold (+ program method `change_threshold_as_authority`)
 - [x] `setTimeLockAsAuthority` — Set the time lock (+ program method `set_time_lock_as_authority`)
 - [x] `setNewSettingsAuthorityAsAuthority` — Change the settings authority (+ program method `set_new_settings_authority_as_authority`)
-- [ ] `setArchivalAuthorityAsAuthority` — Set the archival authority
-- [ ] `addSpendingLimitAsAuthority` — Create a spending limit
-- [ ] `removeSpendingLimitAsAuthority` — Remove a spending limit
+- [ ] `setArchivalAuthorityAsAuthority` — Set the archival authority — **deliberately skipped**:
+      the archival feature is not implemented in the deployed program. Both the
+      `createSmartAccount` handler and the `Settings` state preset
+      `archival_authority` to `Pubkey::default()` and `archivable_after` to `0`
+      "until the archival feature is implemented" (per program source comments),
+      so this instruction mutates a field nothing consumes. Revisit when Squads
+      ships archival.
 
 ## Spending Limits
 
+Implement as one arc — the three instructions only make sense together
+(authority grants a limit, signer spends within it, authority revokes it).
+
+- [ ] `addSpendingLimitAsAuthority` — Create a spending limit (SpendingLimit PDA, Period enum, signer/destination vecs)
+- [ ] `removeSpendingLimitAsAuthority` — Remove a spending limit
 - [ ] `useSpendingLimit` — Transfer tokens from a vault via a spending limit
 
 ## Transaction Buffers (large transactions)
