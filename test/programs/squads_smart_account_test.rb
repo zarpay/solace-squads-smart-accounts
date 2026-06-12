@@ -183,6 +183,135 @@ describe Solace::Programs::SquadsSmartAccount do
     end
   end
 
+  describe '#execute_transaction_sync' do
+    let(:vault_funding)   { 1_000_000_000 }
+    let(:transfer_amount) { 250_000_000 }
+
+    describe 'when the signer pays for the transaction' do
+      before(:all) do
+        # Create a 1-of-1 smart account and fund its default vault.
+        @identity = create_smart_account(
+          program,
+          payer:     creator,
+          creator:   creator,
+          threshold: 1,
+          signers:   [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+        )
+
+        signature = connection.request_airdrop(@identity.smart_account_address, vault_funding)
+        connection.wait_for_confirmed_signature { signature['result'] }
+
+        # Transfer SOL out of the vault through the program method.
+        @recipient = Solace::Keypair.generate
+
+        @tx = program.execute_transaction_sync(
+          payer:         creator,
+          settings:      @identity.settings_address,
+          smart_account: @identity.smart_account_address,
+          signers:       [creator],
+          instructions:  [
+            Solace::Composers::SystemProgramTransferComposer.new(
+              from:     @identity.smart_account_address,
+              to:       @recipient.address,
+              lamports: transfer_amount
+            )
+          ]
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'transfers the amount out of the vault to the recipient' do
+        assert_equal transfer_amount, connection.get_balance(@recipient.address)
+        assert_equal vault_funding - transfer_amount,
+                     connection.get_balance(@identity.smart_account_address)
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      let(:payer) { Fixtures.load_keypair('payer') }
+
+      before(:all) do
+        # Create a 1-of-1 smart account and fund its default vault.
+        @identity = create_smart_account(
+          program,
+          payer:     creator,
+          creator:   creator,
+          threshold: 1,
+          signers:   [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+        )
+
+        signature = connection.request_airdrop(@identity.smart_account_address, vault_funding)
+        connection.wait_for_confirmed_signature { signature['result'] }
+
+        @recipient = Solace::Keypair.generate
+
+        @payer_starting_balance   = connection.get_balance(payer.address)
+        @creator_starting_balance = connection.get_balance(creator.address)
+
+        # The sponsor pays the fee; the creator only co-signs for consensus.
+        @tx = program.execute_transaction_sync(
+          payer:         payer,
+          settings:      @identity.settings_address,
+          smart_account: @identity.smart_account_address,
+          signers:       [creator],
+          instructions:  [
+            Solace::Composers::SystemProgramTransferComposer.new(
+              from:     @identity.smart_account_address,
+              to:       @recipient.address,
+              lamports: transfer_amount
+            )
+          ]
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @payer_ending_balance   = connection.get_balance(payer.address)
+        @creator_ending_balance = connection.get_balance(creator.address)
+      end
+
+      it 'transfers the amount out of the vault to the recipient' do
+        assert_equal transfer_amount, connection.get_balance(@recipient.address)
+        assert_equal vault_funding - transfer_amount,
+                     connection.get_balance(@identity.smart_account_address)
+      end
+
+      it 'deducts only the transaction fee from the sponsor' do
+        # 2 signatures (payer + creator) at 5000 lamports per signature
+        assert_equal @payer_starting_balance - (2 * 5000), @payer_ending_balance
+      end
+
+      it 'deducts nothing from the consensus signer' do
+        assert_equal @creator_starting_balance, @creator_ending_balance
+      end
+    end
+  end
+
+  describe '#compose_execute_transaction_sync' do
+    it 'returns a TransactionComposer ready for a fee payer' do
+      identity = program.next_smart_account
+
+      composer = program.compose_execute_transaction_sync(
+        settings:      identity.settings_address,
+        smart_account: identity.smart_account_address,
+        signers:       [creator.address],
+        instructions:  [
+          Solace::Composers::SystemProgramTransferComposer.new(
+            from:     identity.smart_account_address,
+            to:       Solace::Keypair.generate.address,
+            lamports: 1
+          )
+        ]
+      )
+
+      assert_kind_of Solace::TransactionComposer, composer
+    end
+  end
+
   describe '#get_settings' do
     it 'raises when no settings account exists at the address' do
       missing = Solace::Keypair.generate.address

@@ -211,6 +211,82 @@ module Solace
           .add_instruction(create_smart_account_ix)
       end
       # rubocop:enable Metrics/MethodLength
+
+      # Synchronously executes inner instructions signed by a smart account
+      # (vault) PDA, signs with all co-signers, and (optionally) sends it.
+      #
+      # The transaction must carry enough co-signer signatures to reach the
+      # settings threshold, so :signers must be Keypairs when sign is true.
+      #
+      # @example Transfer SOL out of a vault (1-of-1 smart account)
+      #   tx = program.execute_transaction_sync(
+      #     payer: creator,
+      #     settings: identity.settings_address,
+      #     smart_account: identity.smart_account_address,
+      #     signers: [creator],
+      #     instructions: [
+      #       Solace::Composers::SystemProgramTransferComposer.new(
+      #         from: identity.smart_account_address, to: recipient, lamports: 1_000_000
+      #       )
+      #     ]
+      #   )
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_execute_transaction_sync}.
+      # @return [Transaction] The created or sent transaction.
+      def execute_transaction_sync(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_execute_transaction_sync(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, *composer_opts[:signers])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a synchronous transaction execution.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param smart_account [#to_s] Base58 address of the vault PDA the inner
+      #   instructions spend from.
+      # @param signers [Array<#to_s, Keypair>] Co-signers proving threshold consensus.
+      # @param instructions [Array<Composers::Base>] Inner instruction composers.
+      # @param account_index [Integer] (Optional) Vault index (default: 0).
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_execute_transaction_sync(
+        settings:,
+        smart_account:,
+        signers:,
+        instructions:,
+        account_index: 0
+      )
+        execute_transaction_sync_ix = Composers::SquadsSmartAccountsExecuteTransactionSyncComposer.new(
+          settings: settings,
+          smart_account: smart_account,
+          signers: signers,
+          instructions: instructions,
+          account_index: account_index
+        )
+
+        TransactionComposer
+          .new(connection: connection)
+          .add_instruction(execute_transaction_sync_ix)
+      end
     end
   end
 end
