@@ -3,10 +3,12 @@
 module Solace
   module SquadsSmartAccounts
     # Immutable value object representing the deserialized global ProgramConfig
-    # account for the Squads Smart Account program.
+    # account for the Squads Smart Account program. Fetching from the chain is
+    # the Program layer's responsibility — see
+    # Solace::Programs::SquadsSmartAccount#get_program_config.
     #
     # @example
-    #   config = Solace::SquadsSmartAccounts::ProgramConfig.load(connection)
+    #   config = program.get_program_config
     #   config.treasury                   # => "SQDS4ep..."
     #   config.smart_account_creation_fee # => 10_000_000
     ProgramConfig = Data.define(
@@ -15,18 +17,11 @@ module Solace
       :smart_account_creation_fee, # Integer — lamports charged per smart account creation
       :treasury                    # String  — base58 pubkey that receives creation fees
     ) do
-      # Fetches and deserializes the ProgramConfig account from the chain.
+      # Deserializes a ProgramConfig from a stream of Borsh-encoded account data.
       #
-      # @param connection [Solace::Connection] An active RPC connection.
+      # @param io [IO, StringIO] Stream positioned at the start of the account data.
       # @return [ProgramConfig] The deserialized, frozen config value.
-      # @raise [RuntimeError] If the account does not exist at the expected address.
-      def self.load(connection)
-        account = connection.get_account_info(PROGRAM_CONFIG_ADDRESS)
-        raise 'ProgramConfig account not found — has the validator been bootstrapped?' unless account
-
-        # Build a stream from the base64-encoded account data for sequential reads.
-        io = Solace::Utils::Codecs.base64_to_bytestream(account['data'][0])
-
+      def self.deserialize(io)
         io.read(8) # skip 8-byte Anchor discriminator
 
         new(

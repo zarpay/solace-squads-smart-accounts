@@ -9,7 +9,7 @@ module Solace
     # Program layer's responsibility — composers receive resolved addresses.
     #
     # @example Derive the settings address for the next smart account
-    #   program_config = Solace::SquadsSmartAccounts::ProgramConfig.load(connection)
+    #   program_config = program.get_program_config
     #
     #   settings_address, = Solace::Programs::SquadsSmartAccount.get_settings_address(
     #     settings_seed: program_config.smart_account_index + 1
@@ -71,6 +71,146 @@ module Solace
       def get_smart_account_address(**options)
         self.class.get_smart_account_address(**options)
       end
+
+      # Fetches and deserializes the global ProgramConfig account from the chain.
+      #
+      # @return [SquadsSmartAccounts::ProgramConfig] The deserialized config.
+      # @raise [RuntimeError] If the account does not exist at the expected address.
+      def get_program_config
+        account = connection.get_account_info(Solace::SquadsSmartAccounts::PROGRAM_CONFIG_ADDRESS)
+        raise 'ProgramConfig account not found — has the validator been bootstrapped?' unless account
+
+        Solace::SquadsSmartAccounts::ProgramConfig.deserialize(
+          Solace::Utils::Codecs.base64_to_bytestream(account['data'][0])
+        )
+      end
+
+      # Fetches and deserializes a Settings account from the chain.
+      #
+      # @param settings_address [String] Base58 address of the settings account.
+      # @return [SquadsSmartAccounts::Settings] The deserialized settings.
+      # @raise [RuntimeError] If the account does not exist at the given address.
+      def get_settings(settings_address:)
+        account = connection.get_account_info(settings_address)
+        raise "Settings account not found at #{settings_address}" unless account
+
+        Solace::SquadsSmartAccounts::Settings.deserialize(
+          Solace::Utils::Codecs.base64_to_bytestream(account['data'][0])
+        )
+      end
+
+      # Gets the full deterministic identity of the next smart account to be
+      # created: the settings seed, settings address, and default vault address.
+      #
+      # This is the one-stop call for clients — persist all three values, then
+      # pass the settings_seed to {#create_smart_account}. Subject to races if
+      # other smart accounts are created between this call and execution — the
+      # transaction fails in that case rather than creating an account at an
+      # unexpected address.
+      #
+      # @return [SquadsSmartAccounts::SmartAccountIdentity] The next smart account's identity.
+      def next_smart_account
+        settings_seed = get_program_config.smart_account_index + 1
+
+        settings_address, = get_settings_address(settings_seed: settings_seed)
+        smart_account_address, = get_smart_account_address(settings_address: settings_address)
+
+        Solace::SquadsSmartAccounts::SmartAccountIdentity.new(
+          settings_seed: settings_seed,
+          settings_address: settings_address,
+          smart_account_address: smart_account_address
+        )
+      end
+
+      # Creates a new smart account, signs it, and (optionally) sends it.
+      #
+      # @example Create a smart account, retaining the values to index
+      #   identity = program.next_smart_account
+      #
+      #   tx = program.create_smart_account(
+      #     payer: creator,
+      #     settings_seed: identity.settings_seed,
+      #     creator: creator,
+      #     threshold: 1,
+      #     signers: [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+      #   )
+      #
+      # @param payer [Keypair] The keypair that will pay for fees, rent, and the creation fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_create_smart_account}.
+      # @return [Transaction] The created or sent transaction.
+      def create_smart_account(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_create_smart_account(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:creator])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a new smart account transaction.
+      #
+      # The settings PDA is derived from the given settings_seed, which the
+      # caller obtains via {#next_settings_seed} — keeping the seed explicit so
+      # clients can derive and persist the settings and vault addresses before
+      # sending the transaction.
+      #
+      # @param settings_seed [Integer] The seed for the settings PDA (see {#next_settings_seed}).
+      # @param creator [#to_s, Keypair] The account creating the smart account (must sign).
+      # @param threshold [Integer] Number of approvals required to execute a transaction.
+      # @param signers [Array<SquadsSmartAccounts::SmartAccountSigner>] Signers on the smart account.
+      # @param time_lock [Integer] (Optional) Seconds between proposal and execution (default: 0).
+      # @param settings_authority [#to_s] (Optional) Pubkey of the reconfiguration authority.
+      # @param rent_collector [#to_s] (Optional) Pubkey for reclaiming rent on closed accounts.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      # rubocop:disable Metrics/MethodLength
+      def compose_create_smart_account(
+        settings_seed:,
+        creator:,
+        threshold:,
+        signers:,
+        time_lock: 0,
+        settings_authority: nil,
+        rent_collector: nil,
+        memo: nil
+      )
+        program_config = get_program_config
+
+        settings_address, = get_settings_address(settings_seed: settings_seed)
+
+        create_smart_account_ix = Composers::SquadsSmartAccountsCreateSmartAccountComposer.new(
+          creator: creator,
+          treasury: program_config.treasury,
+          settings: settings_address,
+          threshold: threshold,
+          signers: signers,
+          time_lock: time_lock,
+          settings_authority: settings_authority,
+          rent_collector: rent_collector,
+          memo: memo
+        )
+
+        TransactionComposer
+          .new(connection: connection)
+          .add_instruction(create_smart_account_ix)
+      end
+      # rubocop:enable Metrics/MethodLength
     end
   end
 end

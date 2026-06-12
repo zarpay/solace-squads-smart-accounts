@@ -7,7 +7,7 @@ module Solace
     # `createSmartAccount` and holds the signer set, threshold, and time lock.
     #
     # @example
-    #   settings = Solace::SquadsSmartAccounts::Settings.load(connection, settings_address)
+    #   settings = program.get_settings(settings_address: settings_address)
     #   settings.threshold      # => 1
     #   settings.signers        # => [SmartAccountSigner, ...]
     Settings = Data.define(
@@ -23,19 +23,11 @@ module Solace
       :signers,                 # Array<SmartAccountSigner> — sorted by pubkey on-chain
       :account_utilization      # Integer — number of sub accounts in use
     ) do
-      # Fetches and deserializes a Settings account from the chain.
+      # Deserializes a Settings account from a stream of Borsh-encoded account data.
       #
-      # @param connection [Solace::Connection] An active RPC connection.
-      # @param address [String] Base58 address of the settings account.
+      # @param io [IO, StringIO] Stream positioned at the start of the account data.
       # @return [Settings] The deserialized, frozen settings value.
-      # @raise [RuntimeError] If the account does not exist at the given address.
-      def self.load(connection, address)
-        account = connection.get_account_info(address)
-        raise "Settings account not found at #{address}" unless account
-
-        # Build a stream from the base64-encoded account data for sequential reads.
-        io = Solace::Utils::Codecs.base64_to_bytestream(account['data'][0])
-
+      def self.deserialize(io)
         io.read(8) # skip 8-byte Anchor discriminator
 
         new(

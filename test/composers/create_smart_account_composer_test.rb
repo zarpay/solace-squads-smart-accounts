@@ -12,11 +12,12 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
   let(:creator) { Fixtures.load_keypair('creator') }
 
   let(:connection) { Solace::Connection.new(commitment: 'processed') }
+  let(:program) { Solace::Programs::SquadsSmartAccount.new(connection: connection) }
   let(:transaction_composer) { Solace::TransactionComposer.new(connection: connection) }
 
   describe 'creating an autonomous smart account' do
     before(:all) do
-      @program_config = ProgramConfig.load(connection)
+      @program_config = program.get_program_config
       @settings_seed  = @program_config.smart_account_index + 1
 
       @settings_address, @settings_bump = Solace::Programs::SquadsSmartAccount.get_settings_address(
@@ -44,9 +45,9 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
       connection.wait_for_confirmed_signature { @signature['result'] }
 
       @settings_account = connection.get_account_info(@settings_address)
-      @settings = Settings.load(connection, @settings_address)
+      @settings = program.get_settings(settings_address: @settings_address)
       @treasury_ending_balance = connection.get_balance(@program_config.treasury)
-      @program_config_after = ProgramConfig.load(connection)
+      @program_config_after = program.get_program_config
     end
 
     describe 'transaction effects' do
@@ -104,7 +105,7 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
     let(:payer) { Fixtures.load_keypair('payer') }
 
     before(:all) do
-      @program_config = ProgramConfig.load(connection)
+      @program_config = program.get_program_config
       @settings_seed  = @program_config.smart_account_index + 1
 
       @settings_address, = Solace::Programs::SquadsSmartAccount.get_settings_address(
@@ -158,7 +159,7 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
 
   describe 'creating a controlled smart account with multiple signers' do
     before(:all) do
-      @program_config = ProgramConfig.load(connection)
+      @program_config = program.get_program_config
       @settings_seed  = @program_config.smart_account_index + 1
 
       @settings_address, = Solace::Programs::SquadsSmartAccount.get_settings_address(
@@ -195,7 +196,7 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
       @signature = connection.send_transaction(tx.serialize)
       connection.wait_for_confirmed_signature { @signature['result'] }
 
-      @settings = Settings.load(connection, @settings_address)
+      @settings = program.get_settings(settings_address: @settings_address)
     end
 
     describe 'settings account state' do

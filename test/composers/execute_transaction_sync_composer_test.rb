@@ -11,6 +11,7 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
   let(:creator) { Fixtures.load_keypair('creator') }
 
   let(:connection) { Solace::Connection.new(commitment: 'processed') }
+  let(:program) { Solace::Programs::SquadsSmartAccount.new(connection: connection) }
   let(:transaction_composer) { Solace::TransactionComposer.new(connection: connection) }
 
   describe 'transferring SOL out of the default vault' do
@@ -20,7 +21,7 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
 
     before(:all) do
       # 1. Create a fresh 1-of-1 smart account.
-      program_config = ProgramConfig.load(connection)
+      program_config = program.get_program_config
 
       @settings_address, = Solace::Programs::SquadsSmartAccount.get_settings_address(
         settings_seed: program_config.smart_account_index + 1
@@ -31,13 +32,13 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
         treasury:  program_config.treasury,
         settings:  @settings_address,
         threshold: 1,
-        signers:   [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)],
+        signers:   [SmartAccountSigner.new(pubkey: creator.to_s, permission: Permissions::ALL)],
         time_lock: 0
       )
 
       create_tx_composer = Solace::TransactionComposer.new(connection: connection)
-      create_tx_composer.add_instruction(create_composer)
-      create_tx_composer.set_fee_payer(creator)
+                                                      .add_instruction(create_composer)
+                                                      .set_fee_payer(creator)
 
       tx = create_tx_composer.compose_transaction
       tx.sign(creator)
@@ -91,7 +92,7 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
     end
 
     it 'leaves the settings account untouched' do
-      settings = Settings.load(connection, @settings_address)
+      settings = program.get_settings(settings_address: @settings_address)
 
       assert_equal 1, settings.threshold
       assert_equal 0, settings.transaction_index
@@ -106,7 +107,7 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
 
     before(:all) do
       # 1. Create a 2-of-2 smart account with creator and payer as signers.
-      program_config = ProgramConfig.load(connection)
+      program_config = program.get_program_config
 
       @settings_address, = Solace::Programs::SquadsSmartAccount.get_settings_address(
         settings_seed: program_config.smart_account_index + 1
@@ -180,7 +181,7 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
     end
 
     it 'stores both signers and the threshold in the settings account' do
-      settings = Settings.load(connection, @settings_address)
+      settings = program.get_settings(settings_address: @settings_address)
 
       assert_equal 2, settings.threshold
       assert_equal 2, settings.signers.length
