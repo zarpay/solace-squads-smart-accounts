@@ -412,6 +412,65 @@ module Solace
           .new(connection:)
           .add_instruction(remove_signer_ix)
       end
+
+      # Changes the approval threshold of a controlled smart account, signs with
+      # the settings authority, and (optionally) sends it.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_change_threshold_as_authority}.
+      # @return [Transaction] The created or sent transaction.
+      def change_threshold_as_authority(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_change_threshold_as_authority(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:settings_authority], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a change-threshold-as-authority transaction.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param settings_authority [#to_s, Keypair] The account's settings authority.
+      # @param rent_payer [#to_s, Keypair] Pays for settings account reallocation.
+      # @param new_threshold [Integer] The new approval threshold.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_change_threshold_as_authority(
+        settings:,
+        settings_authority:,
+        rent_payer:,
+        new_threshold:,
+        memo: nil
+      )
+        change_threshold_ix = Composers::SquadsSmartAccountsChangeThresholdAsAuthorityComposer.new(
+          settings:,
+          settings_authority:,
+          rent_payer:,
+          new_threshold:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(change_threshold_ix)
+      end
     end
   end
 end

@@ -589,4 +589,176 @@ describe Solace::Programs::SquadsSmartAccount do
       end
     end
   end
+
+  describe '#change_threshold_as_authority' do
+    describe 'when the authority pays for the transaction' do
+      before(:all) do
+        second_signer = Solace::Keypair.generate
+
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [
+            signer_klass.new(pubkey: creator.address, permission: permissions::ALL),
+            signer_klass.new(pubkey: second_signer.address, permission: permissions::ALL)
+          ]
+        )
+
+        @tx = program.change_threshold_as_authority(
+          payer:              creator,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         creator,
+          new_threshold:      2
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'updates the threshold' do
+        assert_equal 2, @settings.threshold
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        second_signer = Solace::Keypair.generate
+
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [
+            signer_klass.new(pubkey: creator.address, permission: permissions::ALL),
+            signer_klass.new(pubkey: second_signer.address, permission: permissions::ALL)
+          ]
+        )
+
+        @creator_starting_balance = connection.get_balance(creator.address)
+
+        @tx = program.change_threshold_as_authority(
+          payer:,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         payer,
+          new_threshold:      2
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+
+        @creator_ending_balance = connection.get_balance(creator.address)
+      end
+
+      it 'updates the threshold' do
+        assert_equal 2, @settings.threshold
+      end
+
+      it 'deducts nothing from the authority' do
+        assert_equal @creator_starting_balance, @creator_ending_balance
+      end
+    end
+
+    describe 'when the rent payer is distinct from the payer and authority' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        second_signer = Solace::Keypair.generate
+
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [
+            signer_klass.new(pubkey: creator.address, permission: permissions::ALL),
+            signer_klass.new(pubkey: second_signer.address, permission: permissions::ALL)
+          ]
+        )
+
+        # A fresh, unfunded keypair: it only signs as rentPayer — a threshold
+        # change does not resize the settings account, so no rent is due.
+        @rent_payer = Solace::Keypair.generate
+
+        @tx = program.change_threshold_as_authority(
+          payer:,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         @rent_payer,
+          new_threshold:      2
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+      end
+
+      it 'updates the threshold' do
+        assert_equal 2, @settings.threshold
+      end
+
+      it 'charges the rent payer nothing when no realloc is needed' do
+        assert_equal 0, connection.get_balance(@rent_payer.address)
+      end
+    end
+
+    describe 'when the new threshold would deadlock the account' do
+      before(:all) do
+        # A 1-of-1 controlled account: only one voting signer exists.
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+      end
+
+      it 'rejects a threshold above the number of voting signers with InvalidThreshold' do
+        error = assert_raises(Solace::Errors::RPCError) do
+          program.change_threshold_as_authority(
+            payer:              creator,
+            settings:           @identity.settings_address,
+            settings_authority: creator,
+            rent_payer:         creator,
+            new_threshold:      2
+          )
+        end
+
+        # InvalidThreshold — error code 6004 (0x1774)
+        assert_match(/0x1774/, error.message)
+      end
+
+      it 'rejects a zero threshold with InvalidThreshold' do
+        error = assert_raises(Solace::Errors::RPCError) do
+          program.change_threshold_as_authority(
+            payer:              creator,
+            settings:           @identity.settings_address,
+            settings_authority: creator,
+            rent_payer:         creator,
+            new_threshold:      0
+          )
+        end
+
+        # InvalidThreshold — error code 6004 (0x1774)
+        assert_match(/0x1774/, error.message)
+      end
+    end
+  end
 end

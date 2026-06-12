@@ -29,7 +29,7 @@ method on `Solace::Programs::SquadsSmartAccount`.
 
 - [x] `addSignerAsAuthority` — Add a signer (+ program method `add_signer_as_authority`)
 - [x] `removeSignerAsAuthority` — Remove a signer (+ program method `remove_signer_as_authority`)
-- [ ] `changeThresholdAsAuthority` — Change the threshold
+- [x] `changeThresholdAsAuthority` — Change the threshold (+ program method `change_threshold_as_authority`)
 - [ ] `setTimeLockAsAuthority` — Set the time lock
 - [ ] `setNewSettingsAuthorityAsAuthority` — Change the settings authority
 - [ ] `setArchivalAuthorityAsAuthority` — Set the archival authority
