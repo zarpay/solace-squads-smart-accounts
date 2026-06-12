@@ -45,9 +45,13 @@ method on `Solace::Programs::SquadsSmartAccount`.
 SOL limits fully supported across both account modes: controlled accounts manage
 limits via the *AsAuthority instructions; autonomous accounts via
 AddSpendingLimit/RemoveSpendingLimit SettingsActions through
-`executeSettingsTransactionSync`. SPL token limits are a pending increment
-(useSpendingLimit's four SPL-only optional accounts currently carry the
-program ID, Anchor's absent-optional convention).
+`executeSettingsTransactionSync`.
+
+**NEXT UP (before any new instructions):** SPL and Token-2022 mint support for
+spending limits — parameterize useSpendingLimit's four SPL-only optional
+accounts (mint, both token accounts, token program), which currently carry the
+program ID (Anchor's absent-optional convention). Tests will create mints/ATAs
+via solace's SplToken and Token2022 programs.
 
 - [x] `addSpendingLimitAsAuthority` — Create a spending limit (+ program method `add_spending_limit_as_authority`)
 - [x] `removeSpendingLimitAsAuthority` — Remove a spending limit (+ program method `remove_spending_limit_as_authority`)
