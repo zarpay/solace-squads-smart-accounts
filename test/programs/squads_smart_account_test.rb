@@ -320,4 +320,185 @@ describe Solace::Programs::SquadsSmartAccount do
       assert_match(/not found/, error.message)
     end
   end
+
+  describe '#add_signer_as_authority' do
+    describe 'when the authority pays for the transaction' do
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:            creator,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+        )
+
+        @new_signer_key = Solace::Keypair.generate
+
+        @tx = program.add_signer_as_authority(
+          payer:              creator,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         creator,
+          new_signer:         SmartAccountSigner.new(
+            pubkey:     @new_signer_key.address,
+            permission: Permissions::VOTE
+          )
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'adds the signer with its granted permissions' do
+        added = @settings.signers.find { |signer| signer.pubkey == @new_signer_key.address }
+
+        refute_nil added
+        assert_equal Permissions::VOTE, added.permission
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      let(:payer) { Fixtures.load_keypair('payer') }
+
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:            creator,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+        )
+
+        @new_signer_key = Solace::Keypair.generate
+
+        @payer_starting_balance   = connection.get_balance(payer.address)
+        @creator_starting_balance = connection.get_balance(creator.address)
+
+        # The sponsor pays the fee AND the realloc rent; the authority only signs.
+        @tx = program.add_signer_as_authority(
+          payer:              payer,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         payer,
+          new_signer:         SmartAccountSigner.new(
+            pubkey:     @new_signer_key.address,
+            permission: Permissions::VOTE
+          )
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+
+        @payer_ending_balance   = connection.get_balance(payer.address)
+        @creator_ending_balance = connection.get_balance(creator.address)
+      end
+
+      it 'adds the signer with its granted permissions' do
+        added = @settings.signers.find { |signer| signer.pubkey == @new_signer_key.address }
+
+        refute_nil added
+        assert_equal Permissions::VOTE, added.permission
+      end
+
+      it 'deducts nothing from the authority' do
+        assert_equal @creator_starting_balance, @creator_ending_balance
+      end
+
+      it 'deducts the transaction fee and realloc rent from the sponsor' do
+        # 2 signatures (payer + authority) at 5000 lamports per signature,
+        # plus whatever realloc rent the settings account required.
+        fee = 2 * 5000
+
+        assert_operator @payer_ending_balance, :<=, @payer_starting_balance - fee
+      end
+    end
+
+    describe 'when the authority is not a member of the signer set' do
+      let(:payer) { Fixtures.load_keypair('payer') }
+
+      before(:all) do
+        # The authority is a fresh, unfunded keypair: it only signs — the
+        # sponsor pays all fees and rent. It appears nowhere in the signer set.
+        @authority = Solace::Keypair.generate
+
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:            creator,
+          threshold:          1,
+          settings_authority: @authority.address,
+          signers:            [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+        )
+
+        @new_signer_key = Solace::Keypair.generate
+
+        @tx = program.add_signer_as_authority(
+          payer:              payer,
+          settings:           @identity.settings_address,
+          settings_authority: @authority,
+          rent_payer:         payer,
+          new_signer:         SmartAccountSigner.new(
+            pubkey:     @new_signer_key.address,
+            permission: Permissions::VOTE
+          )
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+      end
+
+      it 'adds the signer on the authority signature alone' do
+        added = @settings.signers.find { |signer| signer.pubkey == @new_signer_key.address }
+
+        refute_nil added
+        assert_equal Permissions::VOTE, added.permission
+      end
+
+      it 'does not include the authority in the signer set' do
+        refute @settings.signers.any? { |signer| signer.pubkey == @authority.address }
+      end
+    end
+
+    describe 'when a non-authority member attempts the change' do
+      before(:all) do
+        # creator is a member with full permissions, but the authority is a
+        # different (generated) key that never signs.
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:            creator,
+          threshold:          1,
+          settings_authority: Solace::Keypair.generate.address,
+          signers:            [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+        )
+      end
+
+      it 'rejects the transaction with Unauthorized' do
+        error = assert_raises(Solace::Errors::RPCError) do
+          program.add_signer_as_authority(
+            payer:              creator,
+            settings:           @identity.settings_address,
+            settings_authority: creator,
+            rent_payer:         creator,
+            new_signer:         SmartAccountSigner.new(
+              pubkey:     Solace::Keypair.generate.address,
+              permission: Permissions::VOTE
+            )
+          )
+        end
+
+        # Unauthorized — error code 6005 (0x1775)
+        assert_match(/0x1775/, error.message)
+      end
+    end
+  end
 end

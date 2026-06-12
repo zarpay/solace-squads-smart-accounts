@@ -287,6 +287,74 @@ module Solace
           .new(connection: connection)
           .add_instruction(execute_transaction_sync_ix)
       end
+
+      # Adds a new signer to a controlled smart account, signs with the settings
+      # authority, and (optionally) sends it.
+      #
+      # @example Add a vote-only signer
+      #   tx = program.add_signer_as_authority(
+      #     payer: authority,
+      #     settings: identity.settings_address,
+      #     settings_authority: authority,
+      #     rent_payer: authority,
+      #     new_signer: SmartAccountSigner.new(pubkey: new_key.address, permission: Permissions::VOTE)
+      #   )
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_add_signer_as_authority}.
+      # @return [Transaction] The created or sent transaction.
+      def add_signer_as_authority(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_add_signer_as_authority(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:settings_authority], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares an add-signer-as-authority transaction.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param settings_authority [#to_s, Keypair] The account's settings authority.
+      # @param rent_payer [#to_s, Keypair] Pays for settings account reallocation.
+      # @param new_signer [SquadsSmartAccounts::SmartAccountSigner] The signer to add.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_add_signer_as_authority(
+        settings:,
+        settings_authority:,
+        rent_payer:,
+        new_signer:,
+        memo: nil
+      )
+        add_signer_ix = Composers::SquadsSmartAccountsAddSignerAsAuthorityComposer.new(
+          settings: settings,
+          settings_authority: settings_authority,
+          rent_payer: rent_payer,
+          new_signer: new_signer,
+          memo: memo
+        )
+
+        TransactionComposer
+          .new(connection: connection)
+          .add_instruction(add_signer_ix)
+      end
     end
   end
 end

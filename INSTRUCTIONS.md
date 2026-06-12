@@ -27,7 +27,7 @@ method on `Solace::Programs::SquadsSmartAccount`.
 
 ## Authority Actions (controlled accounts)
 
-- [ ] `addSignerAsAuthority` — Add a signer
+- [x] `addSignerAsAuthority` — Add a signer (+ program method `add_signer_as_authority`)
 - [ ] `removeSignerAsAuthority` — Remove a signer
 - [ ] `changeThresholdAsAuthority` — Change the threshold
 - [ ] `setTimeLockAsAuthority` — Set the time lock
