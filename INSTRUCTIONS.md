@@ -30,8 +30,8 @@ method on `Solace::Programs::SquadsSmartAccount`.
 - [x] `addSignerAsAuthority` — Add a signer (+ program method `add_signer_as_authority`)
 - [x] `removeSignerAsAuthority` — Remove a signer (+ program method `remove_signer_as_authority`)
 - [x] `changeThresholdAsAuthority` — Change the threshold (+ program method `change_threshold_as_authority`)
-- [ ] `setTimeLockAsAuthority` — Set the time lock
-- [ ] `setNewSettingsAuthorityAsAuthority` — Change the settings authority
+- [x] `setTimeLockAsAuthority` — Set the time lock (+ program method `set_time_lock_as_authority`)
+- [x] `setNewSettingsAuthorityAsAuthority` — Change the settings authority (+ program method `set_new_settings_authority_as_authority`)
 - [ ] `setArchivalAuthorityAsAuthority` — Set the archival authority
 - [ ] `addSpendingLimitAsAuthority` — Create a spending limit
 - [ ] `removeSpendingLimitAsAuthority` — Remove a spending limit

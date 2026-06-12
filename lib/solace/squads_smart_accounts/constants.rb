@@ -13,5 +13,10 @@ module Solace
     # PDA for the global program config account, derived from seeds ["smart_account", "program_config"].
     # Holds the treasury address and smart account creation fee.
     PROGRAM_CONFIG_ADDRESS = 'GmY9kVi3FhrCUn2MJkzzpE6C5618YoHuGsgqHU78cKus'
+
+    # Base58 of Pubkey::default() (32 zero bytes). The program stores this as
+    # the settings_authority of autonomous smart accounts; handing the authority
+    # to this key permanently renounces control (nobody can sign as it).
+    DEFAULT_PUBKEY = '11111111111111111111111111111111'
   end
 end

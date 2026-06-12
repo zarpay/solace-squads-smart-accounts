@@ -761,4 +761,200 @@ describe Solace::Programs::SquadsSmartAccount do
       end
     end
   end
+
+  describe '#set_time_lock_as_authority' do
+    describe 'when the authority pays for the transaction' do
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        @tx = program.set_time_lock_as_authority(
+          payer:              creator,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         creator,
+          time_lock:          900
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'updates the time lock' do
+        assert_equal 900, @settings.time_lock
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        @creator_starting_balance = connection.get_balance(creator.address)
+
+        @tx = program.set_time_lock_as_authority(
+          payer:,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         payer,
+          time_lock:          900
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+
+        @creator_ending_balance = connection.get_balance(creator.address)
+      end
+
+      it 'updates the time lock' do
+        assert_equal 900, @settings.time_lock
+      end
+
+      it 'deducts nothing from the authority' do
+        assert_equal @creator_starting_balance, @creator_ending_balance
+      end
+    end
+  end
+
+  describe '#set_new_settings_authority_as_authority' do
+    describe 'when the authority pays for the transaction' do
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        @new_authority = Solace::Keypair.generate
+
+        @tx = program.set_new_settings_authority_as_authority(
+          payer:                  creator,
+          settings:               @identity.settings_address,
+          settings_authority:     creator,
+          rent_payer:             creator,
+          new_settings_authority: @new_authority.address
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'stores the new settings authority' do
+        assert_equal @new_authority.address, @settings.settings_authority
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        @new_authority = Solace::Keypair.generate
+
+        @creator_starting_balance = connection.get_balance(creator.address)
+
+        @tx = program.set_new_settings_authority_as_authority(
+          payer:,
+          settings:               @identity.settings_address,
+          settings_authority:     creator,
+          rent_payer:             payer,
+          new_settings_authority: @new_authority.address
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+
+        @creator_ending_balance = connection.get_balance(creator.address)
+      end
+
+      it 'stores the new settings authority' do
+        assert_equal @new_authority.address, @settings.settings_authority
+      end
+
+      it 'deducts nothing from the authority' do
+        assert_equal @creator_starting_balance, @creator_ending_balance
+      end
+    end
+
+    describe 'when renouncing the authority (nil new authority)' do
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        @tx = program.set_new_settings_authority_as_authority(
+          payer:                  creator,
+          settings:               @identity.settings_address,
+          settings_authority:     creator,
+          rent_payer:             creator,
+          new_settings_authority: nil
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+      end
+
+      it 'stores the default pubkey, marking the account autonomous' do
+        assert_equal Solace::SquadsSmartAccounts::DEFAULT_PUBKEY, @settings.settings_authority
+      end
+
+      it 'permanently strips the old authority of its power' do
+        error = assert_raises(Solace::Errors::RPCError) do
+          program.set_time_lock_as_authority(
+            payer:              creator,
+            settings:           @identity.settings_address,
+            settings_authority: creator,
+            rent_payer:         creator,
+            time_lock:          60
+          )
+        end
+
+        # Unauthorized — error code 6005 (0x1775)
+        assert_match(/0x1775/, error.message)
+      end
+    end
+  end
 end

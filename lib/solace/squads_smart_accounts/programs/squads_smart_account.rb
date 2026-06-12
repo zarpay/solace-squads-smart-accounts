@@ -471,6 +471,126 @@ module Solace
           .new(connection:)
           .add_instruction(change_threshold_ix)
       end
+
+      # Sets the time lock of a controlled smart account, signs with the
+      # settings authority, and (optionally) sends it.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_set_time_lock_as_authority}.
+      # @return [Transaction] The created or sent transaction.
+      def set_time_lock_as_authority(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_set_time_lock_as_authority(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:settings_authority], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a set-time-lock-as-authority transaction.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param settings_authority [#to_s, Keypair] The account's settings authority.
+      # @param rent_payer [#to_s, Keypair] Pays for settings account reallocation.
+      # @param time_lock [Integer] Seconds between approval and execution.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_set_time_lock_as_authority(
+        settings:,
+        settings_authority:,
+        rent_payer:,
+        time_lock:,
+        memo: nil
+      )
+        set_time_lock_ix = Composers::SquadsSmartAccountsSetTimeLockAsAuthorityComposer.new(
+          settings:,
+          settings_authority:,
+          rent_payer:,
+          time_lock:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(set_time_lock_ix)
+      end
+
+      # Hands the settings authority of a controlled smart account to a new key,
+      # signs with the current settings authority, and (optionally) sends it.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_set_new_settings_authority_as_authority}.
+      # @return [Transaction] The created or sent transaction.
+      def set_new_settings_authority_as_authority(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_set_new_settings_authority_as_authority(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:settings_authority], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a set-new-settings-authority-as-authority transaction.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param settings_authority [#to_s, Keypair] The current settings authority.
+      # @param rent_payer [#to_s, Keypair] Pays for settings account reallocation.
+      # @param new_settings_authority [#to_s, nil] Base58 pubkey of the new settings
+      #   authority, or nil to renounce control — stores Pubkey::default(), permanently
+      #   converting the account to autonomous.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_set_new_settings_authority_as_authority(
+        settings:,
+        settings_authority:,
+        rent_payer:,
+        new_settings_authority:,
+        memo: nil
+      )
+        set_new_authority_ix = Composers::SquadsSmartAccountsSetNewSettingsAuthorityAsAuthorityComposer.new(
+          settings:,
+          settings_authority:,
+          rent_payer:,
+          new_settings_authority:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(set_new_authority_ix)
+      end
     end
   end
 end

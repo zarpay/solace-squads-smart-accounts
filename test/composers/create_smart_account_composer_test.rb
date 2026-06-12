@@ -88,7 +88,7 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
 
       it 'is autonomous (settings authority unset)' do
         # The program stores Pubkey::default() when settings_authority is None.
-        assert_equal '11111111111111111111111111111111', @settings.settings_authority
+        assert_equal Solace::SquadsSmartAccounts::DEFAULT_PUBKEY, @settings.settings_authority
       end
 
       it 'initializes the transaction indexes to zero' do
