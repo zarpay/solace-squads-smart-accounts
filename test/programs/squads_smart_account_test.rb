@@ -37,4 +37,37 @@ describe Solace::Programs::SquadsSmartAccount do
                    program.get_settings_address(settings_seed: settings_seed)
     end
   end
+
+  describe '.get_smart_account_address' do
+    let(:settings_address) { klass.get_settings_address(settings_seed: 42).first }
+
+    it 'derives the vault PDA from the documented seeds' do
+      expected_address, expected_bump = Solace::Utils::PDA.find_program_address(
+        ['smart_account', settings_address, 'smart_account', [0]],
+        Solace::SquadsSmartAccounts::PROGRAM_ID
+      )
+
+      address, bump = klass.get_smart_account_address(settings_address: settings_address)
+
+      assert_equal expected_address, address
+      assert_equal expected_bump, bump
+    end
+
+    it 'defaults account_index to 0' do
+      assert_equal klass.get_smart_account_address(settings_address: settings_address, account_index: 0),
+                   klass.get_smart_account_address(settings_address: settings_address)
+    end
+
+    it 'derives different addresses for different account indexes' do
+      address_zero, = klass.get_smart_account_address(settings_address: settings_address)
+      address_one,  = klass.get_smart_account_address(settings_address: settings_address, account_index: 1)
+
+      refute_equal address_zero, address_one
+    end
+
+    it 'is available as an instance method' do
+      assert_equal klass.get_smart_account_address(settings_address: settings_address),
+                   program.get_smart_account_address(settings_address: settings_address)
+    end
+  end
 end

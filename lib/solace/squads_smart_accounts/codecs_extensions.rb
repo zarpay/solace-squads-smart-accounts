@@ -80,6 +80,58 @@ module Solace
           end
       end
 
+      # Encodes a Borsh bytes field: u32 LE length prefix + raw bytes.
+      #
+      # @param bytes [Array<Integer>] The raw bytes.
+      # @return [Array<Integer>]
+      def self.encode_bytes(bytes)
+        encode_le_u32(bytes.length).bytes + bytes
+      end
+
+      # Encodes a SmallVec<u8, u8>: u8 length prefix + raw bytes.
+      #
+      # @param bytes [Array<Integer>] The raw bytes (max 255).
+      # @return [Array<Integer>]
+      def self.encode_smallvec_u8_bytes(bytes)
+        [bytes.length] + bytes
+      end
+
+      # Encodes a SmallVec<u16, u8>: u16 LE length prefix + raw bytes.
+      #
+      # @param bytes [Array<Integer>] The raw bytes (max 65535).
+      # @return [Array<Integer>]
+      def self.encode_smallvec_u16_bytes(bytes)
+        encode_le_u16(bytes.length).bytes + bytes
+      end
+
+      # Encodes a SmallVec<u8, CompiledInstruction> — the wire format the Squads
+      # program expects for synchronously executed inner instructions.
+      #
+      # NOTE: this intentionally does NOT reuse Solace's InstructionSerializer.
+      # That serializer produces the Solana transaction wire format, which uses
+      # compact-u16 (varint) length prefixes for the vec count, account indexes,
+      # and data. The Squads SmallVec format uses fixed-width prefixes instead:
+      # u8 for the vec count, u8 for the account indexes length, and u16 LE for
+      # the data length. The two encodings coincide for lengths < 128 (compact-u16
+      # encodes those as a single byte) but diverge beyond that, so reusing the
+      # Solana format would corrupt larger instructions silently.
+      #
+      # Each instruction is a {Solace::Instruction} whose program_index and
+      # accounts are indexes into the full remaining-accounts list (signers included).
+      # Layout per instruction: u8 program_id_index + SmallVec<u8,u8> account
+      # indexes + SmallVec<u16,u8> data.
+      #
+      # @param instructions [Array<Solace::Instruction>]
+      # @return [Array<Integer>]
+      def self.encode_compiled_instructions(instructions)
+        [instructions.length] +
+          instructions.flat_map do |ix|
+            [ix.program_index] +
+              encode_smallvec_u8_bytes(ix.accounts) +
+              encode_smallvec_u16_bytes(ix.data)
+          end
+      end
+
       # Decodes a u8 from 1 byte.
       #
       # @param stream [IO, StringIO] The stream to read from.

@@ -31,6 +31,22 @@ module Solace
             Solace::SquadsSmartAccounts::PROGRAM_ID
           )
         end
+
+        # Gets the address of a smart account (vault) PDA controlled by a settings account.
+        #
+        # Funds live in vault PDAs; one settings account controls up to 256 vaults
+        # (index 0-255). The on-chain derivation is
+        # ["smart_account", settings_pda, "smart_account", account_index.to_le_bytes()].
+        #
+        # @param settings_address [String] Base58 address of the settings account.
+        # @param account_index [Integer] Vault index in range 0..255 (default: 0).
+        # @return [Array<String, Integer>] The vault address and bump seed.
+        def get_smart_account_address(settings_address:, account_index: 0)
+          Solace::Utils::PDA.find_program_address(
+            ['smart_account', settings_address, 'smart_account', [account_index]],
+            Solace::SquadsSmartAccounts::PROGRAM_ID
+          )
+        end
       end
 
       # Initializes a new Squads Smart Account client.
@@ -46,6 +62,14 @@ module Solace
       # @return [Array<String, Integer>] The settings address and bump seed.
       def get_settings_address(**options)
         self.class.get_settings_address(**options)
+      end
+
+      # Alias method for get_smart_account_address
+      #
+      # @param options [Hash] A hash of options for the get_smart_account_address class method
+      # @return [Array<String, Integer>] The vault address and bump seed.
+      def get_smart_account_address(**options)
+        self.class.get_smart_account_address(**options)
       end
     end
   end

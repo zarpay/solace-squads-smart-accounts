@@ -91,6 +91,10 @@ lib/solace/squads_smart_accounts/
 
 PDA derivation belongs in the Program layer (`Solace::Programs::SquadsSmartAccount.get_settings_address`), never in composers — composers receive resolved addresses as params and expose every param/constant through a documented named accessor method.
 
+## Progress
+
+`INSTRUCTIONS.md` tracks implementation status of all 37 IDL instructions. Check off an instruction when its builder, composer, and integration tests are complete.
+
 ## IDL
 
 The Anchor IDL at `lib/solace/squads_smart_accounts/idl/squads_smart_account_program.json` is the source of truth for instruction names, accounts, and argument types. Keep it in sync with the deployed program:
