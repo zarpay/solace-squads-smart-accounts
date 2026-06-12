@@ -22,7 +22,7 @@ method on `Solace::Programs::SquadsSmartAccount`.
 
 - [ ] `createSettingsTransaction` — Create a settings transaction
 - [ ] `executeSettingsTransaction` — Execute a settings transaction
-- [ ] `executeSettingsTransactionSync` — Synchronously execute a settings transaction
+- [x] `executeSettingsTransactionSync` — Synchronously execute a settings transaction (+ program method `execute_settings_transaction_sync`; SettingsAction variants AddSigner/RemoveSigner/ChangeThreshold/SetTimeLock — spending-limit and archival variants pending their arcs)
 - [ ] `closeSettingsTransaction` — Close a settings transaction and its proposal
 
 ## Authority Actions (controlled accounts)

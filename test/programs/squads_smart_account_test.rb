@@ -957,4 +957,189 @@ describe Solace::Programs::SquadsSmartAccount do
       end
     end
   end
+
+  describe '#execute_settings_transaction_sync' do
+    let(:action_klass) { Solace::SquadsSmartAccounts::SettingsAction }
+
+    describe 'when a signer pays for the transaction' do
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:     creator,
+          creator:,
+          threshold: 1,
+          signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        @new_signer_key = Solace::Keypair.generate
+
+        @tx = program.execute_settings_transaction_sync(
+          payer:      creator,
+          settings:   @identity.settings_address,
+          signers:    [creator],
+          rent_payer: creator,
+          actions:    [
+            action_klass.add_signer(pubkey: @new_signer_key.address, permission: permissions::VOTE)
+          ]
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'applies the action' do
+        added = @settings.signers.find { |signer| signer.pubkey == @new_signer_key.address }
+
+        refute_nil added
+        assert_equal permissions::VOTE, added.permission
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:     creator,
+          creator:,
+          threshold: 1,
+          signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        @creator_starting_balance = connection.get_balance(creator.address)
+
+        # The sponsor pays the fee and any realloc rent; creator only co-signs.
+        @tx = program.execute_settings_transaction_sync(
+          payer:,
+          settings:   @identity.settings_address,
+          signers:    [creator],
+          rent_payer: payer,
+          actions:    [action_klass.set_time_lock(120)]
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+
+        @creator_ending_balance = connection.get_balance(creator.address)
+      end
+
+      it 'applies the action' do
+        assert_equal 120, @settings.time_lock
+      end
+
+      it 'deducts nothing from the co-signer' do
+        assert_equal @creator_starting_balance, @creator_ending_balance
+      end
+    end
+
+    describe 'when multiple co-signers meet the threshold' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        # A 2-of-2 account: both signers must co-sign any settings change.
+        @identity = create_smart_account(
+          program,
+          payer:     creator,
+          creator:,
+          threshold: 2,
+          signers:   [
+            signer_klass.new(pubkey: creator.address, permission: permissions::ALL),
+            signer_klass.new(pubkey: payer.address, permission: permissions::ALL)
+          ]
+        )
+
+        # Atomically lower the threshold and remove the second signer —
+        # ordered so the threshold invariant holds after each action.
+        @tx = program.execute_settings_transaction_sync(
+          payer:      creator,
+          settings:   @identity.settings_address,
+          signers:    [creator, payer],
+          rent_payer: creator,
+          actions:    [
+            action_klass.change_threshold(1),
+            action_klass.remove_signer(payer)
+          ]
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+      end
+
+      it 'lowers the threshold' do
+        assert_equal 1, @settings.threshold
+      end
+
+      it 'removes the signer' do
+        assert_equal 1, @settings.signers.length
+        assert_equal creator.address, @settings.signers.first.pubkey
+      end
+    end
+
+    describe 'when the smart account is controlled' do
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+      end
+
+      it 'rejects the transaction with NotSupportedForControlled' do
+        error = assert_raises(Solace::Errors::RPCError) do
+          program.execute_settings_transaction_sync(
+            payer:      creator,
+            settings:   @identity.settings_address,
+            signers:    [creator],
+            rent_payer: creator,
+            actions:    [action_klass.set_time_lock(120)]
+          )
+        end
+
+        # NotSupportedForControlled — error code 6021 (0x1785)
+        assert_match(/0x1785/, error.message)
+      end
+    end
+
+    describe 'when consensus is not reached' do
+      before(:all) do
+        @second_signer = Solace::Keypair.generate
+
+        @identity = create_smart_account(
+          program,
+          payer:     creator,
+          creator:,
+          threshold: 2,
+          signers:   [
+            signer_klass.new(pubkey: creator.address, permission: permissions::ALL),
+            signer_klass.new(pubkey: @second_signer.address, permission: permissions::ALL)
+          ]
+        )
+      end
+
+      it 'rejects a single co-signer on a threshold-2 account' do
+        error = assert_raises(Solace::Errors::RPCError) do
+          program.execute_settings_transaction_sync(
+            payer:      creator,
+            settings:   @identity.settings_address,
+            signers:    [creator],
+            rent_payer: creator,
+            actions:    [action_klass.set_time_lock(120)]
+          )
+        end
+
+        assert_kind_of Solace::Errors::RPCError, error
+      end
+    end
+  end
 end

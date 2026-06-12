@@ -117,6 +117,15 @@ module Solace
           end
       end
 
+      # Encodes a Vec<SettingsAction> in Borsh format.
+      # u32 LE count prefix followed by each action's variant index + field bytes.
+      #
+      # @param actions [Array<SquadsSmartAccounts::SettingsAction>]
+      # @return [Array<Integer>]
+      def self.encode_settings_actions(actions)
+        encode_le_u32(actions.length).bytes + actions.flat_map(&:serialize)
+      end
+
       # Decodes a u8 from 1 byte.
       #
       # @param stream [IO, StringIO] The stream to read from.

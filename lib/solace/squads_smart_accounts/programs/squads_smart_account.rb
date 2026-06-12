@@ -591,6 +591,82 @@ module Solace
           .new(connection:)
           .add_instruction(set_new_authority_ix)
       end
+
+      # Synchronously applies a batch of SettingsActions to an autonomous smart
+      # account, signs with all co-signers, and (optionally) sends it.
+      #
+      # The transaction must carry enough co-signer signatures to reach the
+      # settings threshold, so :signers must be Keypairs when sign is true.
+      # Controlled accounts are rejected by the program — use the *AsAuthority
+      # methods instead.
+      #
+      # @example Atomically add a signer and raise the threshold (1-of-1 account)
+      #   tx = program.execute_settings_transaction_sync(
+      #     payer: creator,
+      #     settings: identity.settings_address,
+      #     signers: [creator],
+      #     rent_payer: creator,
+      #     actions: [
+      #       SettingsAction.add_signer(pubkey: new_key, permission: Permissions::ALL),
+      #       SettingsAction.change_threshold(2)
+      #     ]
+      #   )
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_execute_settings_transaction_sync}.
+      # @return [Transaction] The created or sent transaction.
+      def execute_settings_transaction_sync(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_execute_settings_transaction_sync(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, *composer_opts[:signers], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a synchronous settings transaction.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param signers [Array<#to_s, Keypair>] Co-signers proving threshold consensus.
+      # @param actions [Array<SquadsSmartAccounts::SettingsAction>] Actions applied atomically.
+      # @param rent_payer [#to_s, Keypair] Pays for settings reallocation.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_execute_settings_transaction_sync(
+        settings:,
+        signers:,
+        actions:,
+        rent_payer:,
+        memo: nil
+      )
+        settings_sync_ix = Composers::SquadsSmartAccountsExecuteSettingsTransactionSyncComposer.new(
+          settings:,
+          signers:,
+          actions:,
+          rent_payer:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(settings_sync_ix)
+      end
     end
   end
 end
