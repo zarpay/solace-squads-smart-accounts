@@ -21,36 +21,18 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
 
     before(:all) do
       # 1. Create a fresh 1-of-1 smart account.
-      program_config = program.get_program_config
-
-      @settings_address, = Solace::Programs::SquadsSmartAccount.get_settings_address(
-        settings_seed: program_config.smart_account_index + 1
-      )
-
-      create_composer = Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer.new(
+      identity = create_smart_account(
+        program,
+        payer:     creator,
         creator:   creator,
-        treasury:  program_config.treasury,
-        settings:  @settings_address,
         threshold: 1,
-        signers:   [SmartAccountSigner.new(pubkey: creator.to_s, permission: Permissions::ALL)],
-        time_lock: 0
+        signers:   [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
       )
 
-      create_tx_composer = Solace::TransactionComposer.new(connection: connection)
-                                                      .add_instruction(create_composer)
-                                                      .set_fee_payer(creator)
-
-      tx = create_tx_composer.compose_transaction
-      tx.sign(creator)
-
-      signature = connection.send_transaction(tx.serialize)
-      connection.wait_for_confirmed_signature { signature['result'] }
+      @settings_address = identity.settings_address
+      @vault_address    = identity.smart_account_address
 
       # 2. Fund the default vault (account index 0).
-      @vault_address, = Solace::Programs::SquadsSmartAccount.get_smart_account_address(
-        settings_address: @settings_address
-      )
-
       signature = connection.request_airdrop(@vault_address, vault_funding)
       connection.wait_for_confirmed_signature { signature['result'] }
 
@@ -107,39 +89,21 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
 
     before(:all) do
       # 1. Create a 2-of-2 smart account with creator and payer as signers.
-      program_config = program.get_program_config
-
-      @settings_address, = Solace::Programs::SquadsSmartAccount.get_settings_address(
-        settings_seed: program_config.smart_account_index + 1
-      )
-
-      create_composer = Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer.new(
+      identity = create_smart_account(
+        program,
+        payer:     creator,
         creator:   creator,
-        treasury:  program_config.treasury,
-        settings:  @settings_address,
         threshold: 2,
         signers:   [
           SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL),
           SmartAccountSigner.new(pubkey: payer.address, permission: Permissions::ALL)
-        ],
-        time_lock: 0
+        ]
       )
 
-      create_tx_composer = Solace::TransactionComposer.new(connection: connection)
-      create_tx_composer.add_instruction(create_composer)
-      create_tx_composer.set_fee_payer(creator)
-
-      tx = create_tx_composer.compose_transaction
-      tx.sign(creator)
-
-      signature = connection.send_transaction(tx.serialize)
-      connection.wait_for_confirmed_signature { signature['result'] }
+      @settings_address = identity.settings_address
+      @vault_address    = identity.smart_account_address
 
       # 2. Fund the default vault.
-      @vault_address, = Solace::Programs::SquadsSmartAccount.get_smart_account_address(
-        settings_address: @settings_address
-      )
-
       signature = connection.request_airdrop(@vault_address, vault_funding)
       connection.wait_for_confirmed_signature { signature['result'] }
 
