@@ -2,14 +2,16 @@
 
 require_relative '../test_helper'
 
-include Solace::SquadsSmartAccounts
-include Solace::SquadsSmartAccounts::Test
-
 describe Solace::Programs::SquadsSmartAccount do
   let(:klass) { Solace::Programs::SquadsSmartAccount }
+
+  let(:fixtures) { Solace::SquadsSmartAccounts::Test::Fixtures }
+  let(:permissions) { Solace::SquadsSmartAccounts::Permissions }
+  let(:signer_klass) { Solace::SquadsSmartAccounts::SmartAccountSigner }
+
   let(:connection) { Solace::Connection.new(commitment: 'processed') }
-  let(:program) { klass.new(connection: connection) }
-  let(:creator) { Fixtures.load_keypair('creator') }
+  let(:program) { klass.new(connection:) }
+  let(:creator) { fixtures.load_keypair('creator') }
 
   describe '#initialize' do
     it 'assigns connection' do
@@ -30,15 +32,15 @@ describe Solace::Programs::SquadsSmartAccount do
         Solace::SquadsSmartAccounts::PROGRAM_ID
       )
 
-      address, bump = klass.get_settings_address(settings_seed: settings_seed)
+      address, bump = klass.get_settings_address(settings_seed:)
 
       assert_equal expected_address, address
       assert_equal expected_bump, bump
     end
 
     it 'is available as an instance method' do
-      assert_equal klass.get_settings_address(settings_seed: settings_seed),
-                   program.get_settings_address(settings_seed: settings_seed)
+      assert_equal klass.get_settings_address(settings_seed:),
+                   program.get_settings_address(settings_seed:)
     end
   end
 
@@ -51,27 +53,27 @@ describe Solace::Programs::SquadsSmartAccount do
         Solace::SquadsSmartAccounts::PROGRAM_ID
       )
 
-      address, bump = klass.get_smart_account_address(settings_address: settings_address)
+      address, bump = klass.get_smart_account_address(settings_address:)
 
       assert_equal expected_address, address
       assert_equal expected_bump, bump
     end
 
     it 'defaults account_index to 0' do
-      assert_equal klass.get_smart_account_address(settings_address: settings_address, account_index: 0),
-                   klass.get_smart_account_address(settings_address: settings_address)
+      assert_equal klass.get_smart_account_address(settings_address:, account_index: 0),
+                   klass.get_smart_account_address(settings_address:)
     end
 
     it 'derives different addresses for different account indexes' do
-      address_zero, = klass.get_smart_account_address(settings_address: settings_address)
-      address_one,  = klass.get_smart_account_address(settings_address: settings_address, account_index: 1)
+      address_zero, = klass.get_smart_account_address(settings_address:)
+      address_one,  = klass.get_smart_account_address(settings_address:, account_index: 1)
 
       refute_equal address_zero, address_one
     end
 
     it 'is available as an instance method' do
-      assert_equal klass.get_smart_account_address(settings_address: settings_address),
-                   program.get_smart_account_address(settings_address: settings_address)
+      assert_equal klass.get_smart_account_address(settings_address:),
+                   program.get_smart_account_address(settings_address:)
     end
   end
 
@@ -79,7 +81,7 @@ describe Solace::Programs::SquadsSmartAccount do
     it 'fetches and deserializes the global program config' do
       config = program.get_program_config
 
-      assert_kind_of ProgramConfig, config
+      assert_kind_of Solace::SquadsSmartAccounts::ProgramConfig, config
       assert_kind_of Integer, config.smart_account_index
       assert Solace::Utils::Codecs.valid_base58?(config.treasury)
     end
@@ -89,7 +91,7 @@ describe Solace::Programs::SquadsSmartAccount do
     it 'returns the identity of the next smart account' do
       identity = program.next_smart_account
 
-      assert_kind_of SmartAccountIdentity, identity
+      assert_kind_of Solace::SquadsSmartAccounts::SmartAccountIdentity, identity
       assert_equal program.get_program_config.smart_account_index + 1, identity.settings_seed
     end
   end
@@ -102,9 +104,9 @@ describe Solace::Programs::SquadsSmartAccount do
         @tx = program.create_smart_account(
           payer:         creator,
           settings_seed: @identity.settings_seed,
-          creator:       creator,
+          creator:,
           threshold:     1,
-          signers:       [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+          signers:       [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
         )
 
         connection.wait_for_confirmed_signature { @tx.signature }
@@ -127,7 +129,7 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { Fixtures.load_keypair('payer') }
+      let(:payer) { fixtures.load_keypair('payer') }
 
       before(:all) do
         @identity = program.next_smart_account
@@ -137,11 +139,11 @@ describe Solace::Programs::SquadsSmartAccount do
         @creator_starting_balance = connection.get_balance(creator.address)
 
         @tx = program.create_smart_account(
-          payer:         payer,
+          payer:,
           settings_seed: @identity.settings_seed,
-          creator:       creator,
+          creator:,
           threshold:     1,
-          signers:       [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+          signers:       [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
         )
 
         connection.wait_for_confirmed_signature { @tx.signature }
@@ -174,9 +176,9 @@ describe Solace::Programs::SquadsSmartAccount do
     it 'returns a TransactionComposer ready for a fee payer' do
       composer = program.compose_create_smart_account(
         settings_seed: program.next_smart_account.settings_seed,
-        creator:       creator,
+        creator:,
         threshold:     1,
-        signers:       [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+        signers:       [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
       )
 
       assert_kind_of Solace::TransactionComposer, composer
@@ -193,9 +195,9 @@ describe Solace::Programs::SquadsSmartAccount do
         @identity = create_smart_account(
           program,
           payer:     creator,
-          creator:   creator,
+          creator:,
           threshold: 1,
-          signers:   [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+          signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
         )
 
         signature = connection.request_airdrop(@identity.smart_account_address, vault_funding)
@@ -233,16 +235,16 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { Fixtures.load_keypair('payer') }
+      let(:payer) { fixtures.load_keypair('payer') }
 
       before(:all) do
         # Create a 1-of-1 smart account and fund its default vault.
         @identity = create_smart_account(
           program,
           payer:     creator,
-          creator:   creator,
+          creator:,
           threshold: 1,
-          signers:   [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+          signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
         )
 
         signature = connection.request_airdrop(@identity.smart_account_address, vault_funding)
@@ -255,7 +257,7 @@ describe Solace::Programs::SquadsSmartAccount do
 
         # The sponsor pays the fee; the creator only co-signs for consensus.
         @tx = program.execute_transaction_sync(
-          payer:         payer,
+          payer:,
           settings:      @identity.settings_address,
           smart_account: @identity.smart_account_address,
           signers:       [creator],
@@ -327,10 +329,10 @@ describe Solace::Programs::SquadsSmartAccount do
         @identity = create_smart_account(
           program,
           payer:              creator,
-          creator:            creator,
+          creator:,
           threshold:          1,
           settings_authority: creator.address,
-          signers:            [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
         )
 
         @new_signer_key = Solace::Keypair.generate
@@ -340,9 +342,9 @@ describe Solace::Programs::SquadsSmartAccount do
           settings:           @identity.settings_address,
           settings_authority: creator,
           rent_payer:         creator,
-          new_signer:         SmartAccountSigner.new(
+          new_signer:         signer_klass.new(
             pubkey:     @new_signer_key.address,
-            permission: Permissions::VOTE
+            permission: permissions::VOTE
           )
         )
 
@@ -359,21 +361,21 @@ describe Solace::Programs::SquadsSmartAccount do
         added = @settings.signers.find { |signer| signer.pubkey == @new_signer_key.address }
 
         refute_nil added
-        assert_equal Permissions::VOTE, added.permission
+        assert_equal permissions::VOTE, added.permission
       end
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { Fixtures.load_keypair('payer') }
+      let(:payer) { fixtures.load_keypair('payer') }
 
       before(:all) do
         @identity = create_smart_account(
           program,
           payer:              creator,
-          creator:            creator,
+          creator:,
           threshold:          1,
           settings_authority: creator.address,
-          signers:            [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
         )
 
         @new_signer_key = Solace::Keypair.generate
@@ -383,13 +385,13 @@ describe Solace::Programs::SquadsSmartAccount do
 
         # The sponsor pays the fee AND the realloc rent; the authority only signs.
         @tx = program.add_signer_as_authority(
-          payer:              payer,
+          payer:,
           settings:           @identity.settings_address,
           settings_authority: creator,
           rent_payer:         payer,
-          new_signer:         SmartAccountSigner.new(
+          new_signer:         signer_klass.new(
             pubkey:     @new_signer_key.address,
-            permission: Permissions::VOTE
+            permission: permissions::VOTE
           )
         )
 
@@ -405,7 +407,7 @@ describe Solace::Programs::SquadsSmartAccount do
         added = @settings.signers.find { |signer| signer.pubkey == @new_signer_key.address }
 
         refute_nil added
-        assert_equal Permissions::VOTE, added.permission
+        assert_equal permissions::VOTE, added.permission
       end
 
       it 'deducts nothing from the authority' do
@@ -422,7 +424,7 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when the authority is not a member of the signer set' do
-      let(:payer) { Fixtures.load_keypair('payer') }
+      let(:payer) { fixtures.load_keypair('payer') }
 
       before(:all) do
         # The authority is a fresh, unfunded keypair: it only signs — the
@@ -432,22 +434,22 @@ describe Solace::Programs::SquadsSmartAccount do
         @identity = create_smart_account(
           program,
           payer:              creator,
-          creator:            creator,
+          creator:,
           threshold:          1,
           settings_authority: @authority.address,
-          signers:            [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
         )
 
         @new_signer_key = Solace::Keypair.generate
 
         @tx = program.add_signer_as_authority(
-          payer:              payer,
+          payer:,
           settings:           @identity.settings_address,
           settings_authority: @authority,
           rent_payer:         payer,
-          new_signer:         SmartAccountSigner.new(
+          new_signer:         signer_klass.new(
             pubkey:     @new_signer_key.address,
-            permission: Permissions::VOTE
+            permission: permissions::VOTE
           )
         )
 
@@ -460,11 +462,11 @@ describe Solace::Programs::SquadsSmartAccount do
         added = @settings.signers.find { |signer| signer.pubkey == @new_signer_key.address }
 
         refute_nil added
-        assert_equal Permissions::VOTE, added.permission
+        assert_equal permissions::VOTE, added.permission
       end
 
       it 'does not include the authority in the signer set' do
-        refute @settings.signers.any? { |signer| signer.pubkey == @authority.address }
+        refute(@settings.signers.any? { |signer| signer.pubkey == @authority.address })
       end
     end
 
@@ -475,10 +477,10 @@ describe Solace::Programs::SquadsSmartAccount do
         @identity = create_smart_account(
           program,
           payer:              creator,
-          creator:            creator,
+          creator:,
           threshold:          1,
           settings_authority: Solace::Keypair.generate.address,
-          signers:            [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
         )
       end
 
@@ -489,15 +491,101 @@ describe Solace::Programs::SquadsSmartAccount do
             settings:           @identity.settings_address,
             settings_authority: creator,
             rent_payer:         creator,
-            new_signer:         SmartAccountSigner.new(
+            new_signer:         signer_klass.new(
               pubkey:     Solace::Keypair.generate.address,
-              permission: Permissions::VOTE
+              permission: permissions::VOTE
             )
           )
         end
 
         # Unauthorized — error code 6005 (0x1775)
         assert_match(/0x1775/, error.message)
+      end
+    end
+  end
+
+  describe '#remove_signer_as_authority' do
+    describe 'when the authority pays for the transaction' do
+      before(:all) do
+        @removed_signer_key = Solace::Keypair.generate
+
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [
+            signer_klass.new(pubkey: creator.address, permission: permissions::ALL),
+            signer_klass.new(pubkey: @removed_signer_key.address, permission: permissions::VOTE)
+          ]
+        )
+
+        @tx = program.remove_signer_as_authority(
+          payer:              creator,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         creator,
+          old_signer:         @removed_signer_key.address
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'removes the signer from the set' do
+        assert_equal 1, @settings.signers.length
+        refute(@settings.signers.any? { |signer| signer.pubkey == @removed_signer_key.address })
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        @removed_signer_key = Solace::Keypair.generate
+
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [
+            signer_klass.new(pubkey: creator.address, permission: permissions::ALL),
+            signer_klass.new(pubkey: @removed_signer_key.address, permission: permissions::VOTE)
+          ]
+        )
+
+        @creator_starting_balance = connection.get_balance(creator.address)
+
+        @tx = program.remove_signer_as_authority(
+          payer:,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         payer,
+          old_signer:         @removed_signer_key.address
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @settings = program.get_settings(settings_address: @identity.settings_address)
+
+        @creator_ending_balance = connection.get_balance(creator.address)
+      end
+
+      it 'removes the signer from the set' do
+        assert_equal 1, @settings.signers.length
+        refute(@settings.signers.any? { |signer| signer.pubkey == @removed_signer_key.address })
+      end
+
+      it 'deducts nothing from the authority' do
+        assert_equal @creator_starting_balance, @creator_ending_balance
       end
     end
   end

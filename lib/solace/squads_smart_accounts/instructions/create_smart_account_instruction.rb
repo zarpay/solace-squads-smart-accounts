@@ -60,12 +60,12 @@ module Solace
               settings_index
             ]
             ix.data = data(
-              settings_authority: settings_authority,
-              threshold:          threshold,
-              signers:            signers,
-              time_lock:          time_lock,
-              rent_collector:     rent_collector,
-              memo:               memo
+              settings_authority:,
+              threshold:,
+              signers:,
+              time_lock:,
+              rent_collector:,
+              memo:
             )
           end
         end

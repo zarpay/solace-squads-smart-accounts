@@ -123,12 +123,12 @@ module Solace
       # @return [Solace::Instruction]
       def build_instruction(context)
         SquadsSmartAccounts::Instructions::CreateSmartAccountInstruction.build(
-          settings_authority:   settings_authority,
-          threshold:            threshold,
-          signers:              signers,
-          time_lock:            time_lock,
-          rent_collector:       rent_collector,
-          memo:                 memo,
+          settings_authority:,
+          threshold:,
+          signers:,
+          time_lock:,
+          rent_collector:,
+          memo:,
           program_config_index: context.index_of(config),
           treasury_index:       context.index_of(treasury),
           creator_index:        context.index_of(creator),

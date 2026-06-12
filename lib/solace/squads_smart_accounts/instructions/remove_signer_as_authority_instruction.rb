@@ -3,10 +3,11 @@
 module Solace
   module SquadsSmartAccounts
     module Instructions
-      # Encodes the `addSignerAsAuthority` instruction for the Squads Smart Account program.
+      # Encodes the `removeSignerAsAuthority` instruction for the Squads Smart Account program.
       #
-      # Adds a new signer (with a permission mask) to a controlled smart account.
-      # Only callable by the account's settings authority — no consensus involved.
+      # Removes a signer from a controlled smart account. Only callable by the
+      # account's settings authority — no consensus involved. The program rejects
+      # removing the last signer or breaking the threshold invariant.
       #
       # IDL accounts (in order):
       #   0. settings          — writable, non-signer
@@ -14,13 +15,13 @@ module Solace
       #   2. rentPayer         — writable, signer (pays for settings realloc)
       #   3. systemProgram     — readonly, non-signer
       #   4. program           — readonly, non-signer
-      class AddSignerAsAuthorityInstruction
-        # 8-byte Anchor discriminator: SHA256("global:add_signer_as_authority")[0..7]
-        DISCRIMINATOR = [80, 198, 228, 154, 7, 234, 99, 56].freeze
+      class RemoveSignerAsAuthorityInstruction
+        # 8-byte Anchor discriminator: SHA256("global:remove_signer_as_authority")[0..7]
+        DISCRIMINATOR = [58, 19, 149, 16, 181, 16, 125, 148].freeze
 
-        # Builds a {Solace::Instruction} for addSignerAsAuthority.
+        # Builds a {Solace::Instruction} for removeSignerAsAuthority.
         #
-        # @param new_signer [SmartAccountSigner] The signer to add (pubkey + permission mask).
+        # @param old_signer [String] Base58 pubkey of the signer to remove.
         # @param memo [String, nil] Optional indexing memo.
         # @param settings_index [Integer] Account index of the settings account.
         # @param settings_authority_index [Integer] Account index of the settings authority.
@@ -29,7 +30,7 @@ module Solace
         # @param program_index [Integer] Account index of the Squads program.
         # @return [Solace::Instruction]
         def self.build(
-          new_signer:,
+          old_signer:,
           memo:,
           settings_index:,
           settings_authority_index:,
@@ -46,20 +47,16 @@ module Solace
               system_program_index,
               program_index
             ]
-            ix.data = data(new_signer:, memo:)
+            ix.data = data(old_signer:, memo:)
           end
         end
 
-        # Encodes the `AddSignerArgs` struct in Borsh format.
-        #
-        # The signer is a bare struct (32-byte pubkey + 1-byte permission mask),
-        # not a Vec — no length prefix.
+        # Encodes the `RemoveSignerArgs` struct in Borsh format.
         #
         # @return [Array<Integer>] Byte array of the encoded instruction data.
-        def self.data(new_signer:, memo:)
+        def self.data(old_signer:, memo:)
           DISCRIMINATOR +
-            Solace::Utils::Codecs.base58_to_bytes(new_signer.pubkey) +
-            [new_signer.permission] +
+            Solace::Utils::Codecs.base58_to_bytes(old_signer) +
             Solace::Utils::Codecs.encode_option_string(memo)
         end
       end

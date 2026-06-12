@@ -2,9 +2,9 @@
 
 require_relative '../test_helper'
 
-# Integration tests — add a signer to a controlled smart account with the
+# Integration tests — remove a signer from a controlled smart account with the
 # settings authority's single signature, then assert the on-chain effects.
-describe Solace::Composers::SquadsSmartAccountsAddSignerAsAuthorityComposer do
+describe Solace::Composers::SquadsSmartAccountsRemoveSignerAsAuthorityComposer do
   let(:fixtures) { Solace::SquadsSmartAccounts::Test::Fixtures }
   let(:permissions) { Solace::SquadsSmartAccounts::Permissions }
   let(:signer_klass) { Solace::SquadsSmartAccounts::SmartAccountSigner }
@@ -15,29 +15,30 @@ describe Solace::Composers::SquadsSmartAccountsAddSignerAsAuthorityComposer do
   let(:program) { Solace::Programs::SquadsSmartAccount.new(connection:) }
   let(:transaction_composer) { Solace::TransactionComposer.new(connection:) }
 
-  describe 'adding a signer to a controlled smart account' do
+  describe 'removing a signer from a controlled smart account' do
     before(:all) do
-      # Create a controlled 1-of-1 smart account with creator as the authority.
+      # Create a controlled smart account with two signers; creator is the authority.
+      @removed_signer_key = Solace::Keypair.generate
+
       identity = create_smart_account(
         program,
         payer:              creator,
         creator:,
         threshold:          1,
         settings_authority: creator.address,
-        signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        signers:            [
+          signer_klass.new(pubkey: creator.address, permission: permissions::ALL),
+          signer_klass.new(pubkey: @removed_signer_key.address, permission: permissions::VOTE)
+        ]
       )
 
       @settings_address = identity.settings_address
-      @new_signer_key   = Solace::Keypair.generate
 
-      composer = Solace::Composers::SquadsSmartAccountsAddSignerAsAuthorityComposer.new(
+      composer = Solace::Composers::SquadsSmartAccountsRemoveSignerAsAuthorityComposer.new(
         settings:           @settings_address,
         settings_authority: creator.address,
         rent_payer:         creator.address,
-        new_signer:         signer_klass.new(
-          pubkey:     @new_signer_key.address,
-          permission: permissions.mask(:initiate, :vote)
-        )
+        old_signer:         @removed_signer_key.address
       )
 
       transaction_composer.add_instruction(composer)
@@ -52,19 +53,16 @@ describe Solace::Composers::SquadsSmartAccountsAddSignerAsAuthorityComposer do
       @settings = program.get_settings(settings_address: @settings_address)
     end
 
-    it 'grows the signer set to two' do
-      assert_equal 2, @settings.signers.length
+    it 'shrinks the signer set to one' do
+      assert_equal 1, @settings.signers.length
     end
 
-    it 'stores the new signer with its granted permissions' do
-      added = @settings.signers.find { |signer| signer.pubkey == @new_signer_key.address }
-
-      refute_nil added, 'Expected the new signer to be present in the settings'
-      assert_equal permissions.mask(:initiate, :vote), added.permission
+    it 'no longer contains the removed signer' do
+      refute(@settings.signers.any? { |signer| signer.pubkey == @removed_signer_key.address })
     end
 
-    it 'leaves the threshold unchanged' do
-      assert_equal 1, @settings.threshold
+    it 'retains the remaining signer' do
+      assert_equal creator.address, @settings.signers.first.pubkey
     end
   end
 end

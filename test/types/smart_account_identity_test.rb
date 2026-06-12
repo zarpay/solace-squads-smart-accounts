@@ -2,24 +2,22 @@
 
 require_relative '../test_helper'
 
-include Solace::SquadsSmartAccounts
-
-describe SmartAccountIdentity do
+describe Solace::SquadsSmartAccounts::SmartAccountIdentity do
   let(:settings_seed) { 42 }
 
   let(:settings_address) do
-    Solace::Programs::SquadsSmartAccount.get_settings_address(settings_seed: settings_seed).first
+    Solace::Programs::SquadsSmartAccount.get_settings_address(settings_seed:).first
   end
 
   let(:smart_account_address) do
-    Solace::Programs::SquadsSmartAccount.get_smart_account_address(settings_address: settings_address).first
+    Solace::Programs::SquadsSmartAccount.get_smart_account_address(settings_address:).first
   end
 
   let(:identity) do
-    SmartAccountIdentity.new(
-      settings_seed:         settings_seed,
-      settings_address:      settings_address,
-      smart_account_address: smart_account_address
+    Solace::SquadsSmartAccounts::SmartAccountIdentity.new(
+      settings_seed:,
+      settings_address:,
+      smart_account_address:
     )
   end
 

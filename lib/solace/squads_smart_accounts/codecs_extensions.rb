@@ -1,26 +1,11 @@
 # frozen_string_literal: true
 
-require 'digest'
-
 module Solace
   module Utils
     # Extensions to Solace::Utils::Codecs for Anchor programs and Borsh types not
     # covered by the base gem. Candidates for upstreaming to solace when the need
     # is confirmed across other extension gems.
     module Codecs
-      # Computes the 8-byte Anchor instruction discriminator for a given instruction name.
-      # Anchor derives discriminators from the snake_case name regardless of how the
-      # instruction is named in the IDL (which uses camelCase).
-      #
-      # @param instruction_name [String] The instruction name in camelCase or snake_case
-      #   (e.g. 'createSmartAccount' or 'create_smart_account').
-      # @return [Array<Integer>] 8-byte discriminator array.
-      def self.anchor_discriminator(instruction_name)
-        # Convert camelCase to snake_case to match Anchor's internal naming.
-        snake = instruction_name.gsub(/([A-Z])/) { "_#{$1.downcase}" }.sub(/\A_/, '')
-        Digest::SHA256.digest("global:#{snake}").bytes.first(8)
-      end
-
       # Encodes a u16 as 2 little-endian bytes.
       #
       # @param u16 [Integer] Value in range 0..65535.
@@ -140,6 +125,14 @@ module Solace
         stream.read(1).unpack1('C')
       end
 
+      # Decodes a public key from 32 bytes.
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [String] Base58 public key.
+      def self.decode_pubkey(stream)
+        Solace::Utils::Codecs.bytes_to_base58(stream.read(32).bytes)
+      end
+
       # Decodes a u16 from 2 little-endian bytes.
       #
       # @param stream [IO, StringIO] The stream to read from.
@@ -173,7 +166,7 @@ module Solace
       def self.decode_option_pubkey(stream)
         return nil if decode_u8(stream).zero?
 
-        Solace::Utils::Codecs.bytes_to_base58(stream.read(32).bytes)
+        decode_pubkey(stream)
       end
 
       # Decodes a Vec<SmartAccountSigner> in Borsh format.
@@ -184,7 +177,7 @@ module Solace
       def self.decode_smart_account_signers(stream)
         Array.new(decode_le_u32(stream)) do
           SquadsSmartAccounts::SmartAccountSigner.new(
-            pubkey:     Solace::Utils::Codecs.bytes_to_base58(stream.read(32).bytes),
+            pubkey:     decode_pubkey(stream),
             permission: decode_u8(stream)
           )
         end

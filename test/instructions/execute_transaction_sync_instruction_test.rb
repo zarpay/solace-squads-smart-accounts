@@ -2,9 +2,9 @@
 
 require_relative '../test_helper'
 
-include Solace::SquadsSmartAccounts
+describe Solace::SquadsSmartAccounts::Instructions::ExecuteTransactionSyncInstruction do
+  let(:klass) { Solace::SquadsSmartAccounts::Instructions::ExecuteTransactionSyncInstruction }
 
-describe Instructions::ExecuteTransactionSyncInstruction do
   describe '.build' do
     # One inner instruction, pre-compiled: indexes are relative to the full
     # remaining-accounts list (signers first, then inner accounts).
@@ -17,7 +17,7 @@ describe Instructions::ExecuteTransactionSyncInstruction do
     end
 
     let(:ix) do
-      Instructions::ExecuteTransactionSyncInstruction.build(
+      klass.build(
         account_index:             0,
         num_signers:               1,
         instructions:              [inner_instruction],
@@ -41,7 +41,7 @@ describe Instructions::ExecuteTransactionSyncInstruction do
     end
 
     it 'data begins with the execute_transaction_sync discriminator' do
-      assert_equal Instructions::ExecuteTransactionSyncInstruction::DISCRIMINATOR, ix.data.first(8)
+      assert_equal klass::DISCRIMINATOR, ix.data.first(8)
     end
 
     it 'data encodes account_index and num_signers as single bytes' do

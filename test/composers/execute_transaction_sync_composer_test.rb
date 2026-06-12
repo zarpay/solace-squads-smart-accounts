@@ -2,17 +2,18 @@
 
 require_relative '../test_helper'
 
-include Solace::SquadsSmartAccounts
-include Solace::SquadsSmartAccounts::Test
-
 # Integration tests — execute a transfer out of a smart account vault in a
 # single transaction by reaching threshold with co-signers (1-of-1).
 describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
-  let(:creator) { Fixtures.load_keypair('creator') }
+  let(:fixtures) { Solace::SquadsSmartAccounts::Test::Fixtures }
+  let(:permissions) { Solace::SquadsSmartAccounts::Permissions }
+  let(:signer_klass) { Solace::SquadsSmartAccounts::SmartAccountSigner }
+
+  let(:creator) { fixtures.load_keypair('creator') }
 
   let(:connection) { Solace::Connection.new(commitment: 'processed') }
-  let(:program) { Solace::Programs::SquadsSmartAccount.new(connection: connection) }
-  let(:transaction_composer) { Solace::TransactionComposer.new(connection: connection) }
+  let(:program) { Solace::Programs::SquadsSmartAccount.new(connection:) }
+  let(:transaction_composer) { Solace::TransactionComposer.new(connection:) }
 
   describe 'transferring SOL out of the default vault' do
     # Amount funded into the vault and amount transferred out of it.
@@ -24,9 +25,9 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
       identity = create_smart_account(
         program,
         payer:     creator,
-        creator:   creator,
+        creator:,
         threshold: 1,
-        signers:   [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)]
+        signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
       )
 
       @settings_address = identity.settings_address
@@ -82,7 +83,7 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
   end
 
   describe 'transferring SOL out of a vault with threshold 2' do
-    let(:payer) { Fixtures.load_keypair('payer') }
+    let(:payer) { fixtures.load_keypair('payer') }
 
     let(:vault_funding)   { 1_000_000_000 }
     let(:transfer_amount) { 250_000_000 }
@@ -92,11 +93,11 @@ describe Solace::Composers::SquadsSmartAccountsExecuteTransactionSyncComposer do
       identity = create_smart_account(
         program,
         payer:     creator,
-        creator:   creator,
+        creator:,
         threshold: 2,
         signers:   [
-          SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL),
-          SmartAccountSigner.new(pubkey: payer.address, permission: Permissions::ALL)
+          signer_klass.new(pubkey: creator.address, permission: permissions::ALL),
+          signer_klass.new(pubkey: payer.address, permission: permissions::ALL)
         ]
       )
 

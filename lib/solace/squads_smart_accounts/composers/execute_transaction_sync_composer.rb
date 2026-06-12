@@ -109,19 +109,10 @@ module Solace
         # Co-signers proving threshold consensus
         signers.each { |signer| account_context.add_readonly_signer(signer) }
 
-        # Accounts referenced by the inner instructions, with their inner flags —
-        # except the vault, which must not sign the outer transaction (the
-        # program patches its signer bit at runtime during the CPI).
+        # Accounts referenced by the inner instructions, with their inner flags.
         instructions.each do |composer|
           composer.account_context.pubkey_account_map.each do |pubkey, flags|
-            signer   = pubkey == smart_account ? false : flags[:signer]
-            writable = flags[:writable]
-
-            if signer && writable then account_context.add_writable_signer(pubkey)
-            elsif signer          then account_context.add_readonly_signer(pubkey)
-            elsif writable        then account_context.add_writable_nonsigner(pubkey)
-            else account_context.add_readonly_nonsigner(pubkey)
-            end
+            add_inner_account(pubkey, flags)
           end
         end
       end
@@ -132,7 +123,7 @@ module Solace
       # @return [Solace::Instruction]
       def build_instruction(context)
         SquadsSmartAccounts::Instructions::ExecuteTransactionSyncInstruction.build(
-          account_index:             account_index,
+          account_index:,
           num_signers:               signers.length,
           instructions:              compiled_instructions,
           settings_index:            context.index_of(settings),
@@ -140,6 +131,26 @@ module Solace
           signer_indices:            signers.map { |signer| context.index_of(signer) },
           remaining_account_indices: remaining_pubkeys.map { |pubkey| context.index_of(pubkey) }
         )
+      end
+
+      private
+
+      # Declares one inner-instruction account with its inner flags — except the
+      # vault, which must not sign the outer transaction (the program patches
+      # its signer bit at runtime during the CPI).
+      #
+      # @param pubkey [String] Base58 pubkey of the inner account.
+      # @param flags [Hash] The signer/writable flags from the inner composer's context.
+      # @return [void]
+      def add_inner_account(pubkey, flags)
+        signer   = pubkey == smart_account ? false : flags[:signer]
+        writable = flags[:writable]
+
+        if signer && writable then account_context.add_writable_signer(pubkey)
+        elsif signer          then account_context.add_readonly_signer(pubkey)
+        elsif writable        then account_context.add_writable_nonsigner(pubkey)
+        else account_context.add_readonly_nonsigner(pubkey)
+        end
       end
     end
   end

@@ -2,18 +2,19 @@
 
 require_relative '../test_helper'
 
-include Solace::SquadsSmartAccounts
-include Solace::SquadsSmartAccounts::Test
-
 # Integration tests — compose, sign, and send createSmartAccount transactions
 # against the local test validator, then assert the on-chain effects by
 # deserializing the resulting Settings account.
 describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
-  let(:creator) { Fixtures.load_keypair('creator') }
+  let(:fixtures) { Solace::SquadsSmartAccounts::Test::Fixtures }
+  let(:permissions) { Solace::SquadsSmartAccounts::Permissions }
+  let(:signer_klass) { Solace::SquadsSmartAccounts::SmartAccountSigner }
+
+  let(:creator) { fixtures.load_keypair('creator') }
 
   let(:connection) { Solace::Connection.new(commitment: 'processed') }
-  let(:program) { Solace::Programs::SquadsSmartAccount.new(connection: connection) }
-  let(:transaction_composer) { Solace::TransactionComposer.new(connection: connection) }
+  let(:program) { Solace::Programs::SquadsSmartAccount.new(connection:) }
+  let(:transaction_composer) { Solace::TransactionComposer.new(connection:) }
 
   describe 'creating an autonomous smart account' do
     before(:all) do
@@ -25,11 +26,11 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
       )
 
       composer = Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer.new(
-        creator:   creator,
+        creator:,
         treasury:  @program_config.treasury,
         settings:  @settings_address,
         threshold: 1,
-        signers:   [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)],
+        signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)],
         time_lock: 0
       )
 
@@ -53,7 +54,7 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
     describe 'transaction effects' do
       it 'creates the settings account owned by the Squads program' do
         refute_nil @settings_account, 'Expected settings account to exist on-chain'
-        assert_equal PROGRAM_ID, @settings_account['owner']
+        assert_equal Solace::SquadsSmartAccounts::PROGRAM_ID, @settings_account['owner']
       end
 
       it 'transfers the creation fee to the treasury' do
@@ -82,7 +83,7 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
       it 'stores the creator as the only signer with all permissions' do
         assert_equal 1, @settings.signers.length
         assert_equal creator.address, @settings.signers.first.pubkey
-        assert_equal Permissions::ALL, @settings.signers.first.permission
+        assert_equal permissions::ALL, @settings.signers.first.permission
       end
 
       it 'is autonomous (settings authority unset)' do
@@ -102,7 +103,7 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
   end
 
   describe 'creating a smart account with a sponsored fee payer' do
-    let(:payer) { Fixtures.load_keypair('payer') }
+    let(:payer) { fixtures.load_keypair('payer') }
 
     before(:all) do
       @program_config = program.get_program_config
@@ -113,11 +114,11 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
       )
 
       composer = Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer.new(
-        creator:   creator,
+        creator:,
         treasury:  @program_config.treasury,
         settings:  @settings_address,
         threshold: 1,
-        signers:   [SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL)],
+        signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)],
         time_lock: 0
       )
 
@@ -141,7 +142,7 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
     describe 'transaction effects' do
       it 'creates the settings account owned by the Squads program' do
         refute_nil @settings_account, 'Expected settings account to exist on-chain'
-        assert_equal PROGRAM_ID, @settings_account['owner']
+        assert_equal Solace::SquadsSmartAccounts::PROGRAM_ID, @settings_account['owner']
       end
 
       it 'deducts only the transaction fee from the payer' do
@@ -170,14 +171,14 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
       @second_signer      = Solace::Keypair.generate
 
       composer = Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer.new(
-        creator:            creator,
+        creator:,
         treasury:           @program_config.treasury,
         settings:           @settings_address,
         threshold:          2,
         signers:            [
-          SmartAccountSigner.new(pubkey: creator.address, permission: Permissions::ALL),
-          SmartAccountSigner.new(pubkey: @second_signer.address,
-                                 permission: Permissions.mask(:initiate, :vote))
+          signer_klass.new(pubkey: creator.address, permission: permissions::ALL),
+          signer_klass.new(pubkey:     @second_signer.address,
+                           permission: permissions.mask(:initiate, :vote))
         ],
         time_lock:          3600,
         settings_authority: @settings_authority.address,
@@ -219,8 +220,8 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
         creator_signer = @settings.signers.find { |signer| signer.pubkey == creator.address }
         second_signer  = @settings.signers.find { |signer| signer.pubkey == @second_signer.address }
 
-        assert_equal Permissions::ALL, creator_signer.permission
-        assert_equal Permissions.mask(:initiate, :vote), second_signer.permission
+        assert_equal permissions::ALL, creator_signer.permission
+        assert_equal permissions.mask(:initiate, :vote), second_signer.permission
       end
     end
   end

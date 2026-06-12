@@ -2,22 +2,27 @@
 
 require_relative '../test_helper'
 
-include Solace::SquadsSmartAccounts
+describe Solace::SquadsSmartAccounts::Instructions::CreateSmartAccountInstruction do
+  let(:klass) { Solace::SquadsSmartAccounts::Instructions::CreateSmartAccountInstruction }
 
-describe Instructions::CreateSmartAccountInstruction do
   describe '.build' do
     let(:creator_pubkey)  { 'GqH8rytYU4AtEePST5x1JvgDTYZtVGoSbZ5zRZU2vPDh' }
     let(:treasury_pubkey) { '4EKP9SRfykFkuBqJFBiBBTrSBMqxRGnmSQiNpFdJfJXq' }
 
     let(:signers) do
-      [SmartAccountSigner.new(pubkey: creator_pubkey, permission: Permissions::ALL)]
+      [
+        Solace::SquadsSmartAccounts::SmartAccountSigner.new(
+          pubkey:     creator_pubkey,
+          permission: Solace::SquadsSmartAccounts::Permissions::ALL
+        )
+      ]
     end
 
     let(:ix) do
-      Instructions::CreateSmartAccountInstruction.build(
+      klass.build(
         settings_authority:   nil,
         threshold:            1,
-        signers:              signers,
+        signers:,
         time_lock:            0,
         rent_collector:       nil,
         memo:                 nil,
@@ -43,7 +48,7 @@ describe Instructions::CreateSmartAccountInstruction do
     end
 
     it 'data begins with the correct Anchor discriminator' do
-      assert_equal Instructions::CreateSmartAccountInstruction::DISCRIMINATOR, ix.data.first(8)
+      assert_equal klass::DISCRIMINATOR, ix.data.first(8)
     end
 
     it 'data encodes a None settings_authority as a single zero byte' do
@@ -59,7 +64,7 @@ describe Instructions::CreateSmartAccountInstruction do
     let(:pubkey) { 'GqH8rytYU4AtEePST5x1JvgDTYZtVGoSbZ5zRZU2vPDh' }
 
     it 'encodes a Some settings_authority correctly' do
-      data = Instructions::CreateSmartAccountInstruction.data(
+      data = klass.data(
         settings_authority: pubkey,
         threshold:          1,
         signers:            [],
@@ -75,7 +80,7 @@ describe Instructions::CreateSmartAccountInstruction do
     end
 
     it 'encodes memo as None when nil' do
-      data = Instructions::CreateSmartAccountInstruction.data(
+      data = klass.data(
         settings_authority: nil,
         threshold:          1,
         signers:            [],

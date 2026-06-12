@@ -2,20 +2,20 @@
 
 module Solace
   module Composers
-    # Composes an `addSignerAsAuthority` instruction for the Squads Smart Account program.
+    # Composes a `removeSignerAsAuthority` instruction for the Squads Smart Account program.
     #
-    # Adds a new signer to a controlled smart account. Only the account's
+    # Removes a signer from a controlled smart account. Only the account's
     # settings authority may do this — single signature, no consensus.
     #
     # Required params:
-    #   :settings           [String]              Base58 address of the settings account.
-    #   :settings_authority [#to_s, Keypair]      The account's settings authority (must sign).
-    #   :rent_payer         [#to_s, Keypair]      Pays for settings account reallocation (must sign).
-    #   :new_signer         [SquadsSmartAccounts::SmartAccountSigner] The signer to add.
+    #   :settings           [String]         Base58 address of the settings account.
+    #   :settings_authority [#to_s, Keypair] The account's settings authority (must sign).
+    #   :rent_payer         [#to_s, Keypair] Pays for settings account reallocation (must sign).
+    #   :old_signer         [#to_s]          Base58 pubkey of the signer to remove.
     #
     # Optional params:
     #   :memo [String] Indexing memo (default: nil).
-    class SquadsSmartAccountsAddSignerAsAuthorityComposer < Base
+    class SquadsSmartAccountsRemoveSignerAsAuthorityComposer < Base
       # Extracts the settings address from the params
       #
       # @return [String] The settings address
@@ -37,11 +37,11 @@ module Solace
         params[:rent_payer].to_s
       end
 
-      # Extracts the new signer from the params
+      # Extracts the pubkey of the signer to remove from the params
       #
-      # @return [SquadsSmartAccounts::SmartAccountSigner] The signer to add
-      def new_signer
-        params[:new_signer]
+      # @return [String] The pubkey of the signer to remove
+      def old_signer
+        params[:old_signer].to_s
       end
 
       # Extracts the memo from the params
@@ -79,8 +79,8 @@ module Solace
       # @param context [Solace::Utils::AccountContext] Merged context from TransactionComposer.
       # @return [Solace::Instruction]
       def build_instruction(context)
-        SquadsSmartAccounts::Instructions::AddSignerAsAuthorityInstruction.build(
-          new_signer:,
+        SquadsSmartAccounts::Instructions::RemoveSignerAsAuthorityInstruction.build(
+          old_signer:,
           memo:,
           settings_index:           context.index_of(settings),
           settings_authority_index: context.index_of(settings_authority),

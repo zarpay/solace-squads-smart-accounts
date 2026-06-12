@@ -53,7 +53,7 @@ module Solace
       #
       # @param connection [Solace::Connection] The connection to the Solana cluster.
       def initialize(connection:)
-        super(connection: connection, program_id: Solace::SquadsSmartAccounts::PROGRAM_ID)
+        super(connection:, program_id: Solace::SquadsSmartAccounts::PROGRAM_ID)
       end
 
       # Alias method for get_settings_address
@@ -112,13 +112,13 @@ module Solace
       def next_smart_account
         settings_seed = get_program_config.smart_account_index + 1
 
-        settings_address, = get_settings_address(settings_seed: settings_seed)
-        smart_account_address, = get_smart_account_address(settings_address: settings_address)
+        settings_address, = get_settings_address(settings_seed:)
+        smart_account_address, = get_smart_account_address(settings_address:)
 
         Solace::SquadsSmartAccounts::SmartAccountIdentity.new(
-          settings_seed: settings_seed,
-          settings_address: settings_address,
-          smart_account_address: smart_account_address
+          settings_seed:,
+          settings_address:,
+          smart_account_address:
         )
       end
 
@@ -179,7 +179,6 @@ module Solace
       # @param rent_collector [#to_s] (Optional) Pubkey for reclaiming rent on closed accounts.
       # @param memo [String] (Optional) Indexing memo.
       # @return [TransactionComposer] A composer with required instructions.
-      # rubocop:disable Metrics/MethodLength
       def compose_create_smart_account(
         settings_seed:,
         creator:,
@@ -192,25 +191,24 @@ module Solace
       )
         program_config = get_program_config
 
-        settings_address, = get_settings_address(settings_seed: settings_seed)
+        settings_address, = get_settings_address(settings_seed:)
 
         create_smart_account_ix = Composers::SquadsSmartAccountsCreateSmartAccountComposer.new(
-          creator: creator,
-          treasury: program_config.treasury,
-          settings: settings_address,
-          threshold: threshold,
-          signers: signers,
-          time_lock: time_lock,
-          settings_authority: settings_authority,
-          rent_collector: rent_collector,
-          memo: memo
+          creator:,
+          treasury:           program_config.treasury,
+          settings:           settings_address,
+          threshold:,
+          signers:,
+          time_lock:,
+          settings_authority:,
+          rent_collector:,
+          memo:
         )
 
         TransactionComposer
-          .new(connection: connection)
+          .new(connection:)
           .add_instruction(create_smart_account_ix)
       end
-      # rubocop:enable Metrics/MethodLength
 
       # Synchronously executes inner instructions signed by a smart account
       # (vault) PDA, signs with all co-signers, and (optionally) sends it.
@@ -276,15 +274,15 @@ module Solace
         account_index: 0
       )
         execute_transaction_sync_ix = Composers::SquadsSmartAccountsExecuteTransactionSyncComposer.new(
-          settings: settings,
-          smart_account: smart_account,
-          signers: signers,
-          instructions: instructions,
-          account_index: account_index
+          settings:,
+          smart_account:,
+          signers:,
+          instructions:,
+          account_index:
         )
 
         TransactionComposer
-          .new(connection: connection)
+          .new(connection:)
           .add_instruction(execute_transaction_sync_ix)
       end
 
@@ -344,16 +342,75 @@ module Solace
         memo: nil
       )
         add_signer_ix = Composers::SquadsSmartAccountsAddSignerAsAuthorityComposer.new(
-          settings: settings,
-          settings_authority: settings_authority,
-          rent_payer: rent_payer,
-          new_signer: new_signer,
-          memo: memo
+          settings:,
+          settings_authority:,
+          rent_payer:,
+          new_signer:,
+          memo:
         )
 
         TransactionComposer
-          .new(connection: connection)
+          .new(connection:)
           .add_instruction(add_signer_ix)
+      end
+
+      # Removes a signer from a controlled smart account, signs with the settings
+      # authority, and (optionally) sends it.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_remove_signer_as_authority}.
+      # @return [Transaction] The created or sent transaction.
+      def remove_signer_as_authority(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_remove_signer_as_authority(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:settings_authority], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a remove-signer-as-authority transaction.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param settings_authority [#to_s, Keypair] The account's settings authority.
+      # @param rent_payer [#to_s, Keypair] Pays for settings account reallocation.
+      # @param old_signer [#to_s] Base58 pubkey of the signer to remove.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_remove_signer_as_authority(
+        settings:,
+        settings_authority:,
+        rent_payer:,
+        old_signer:,
+        memo: nil
+      )
+        remove_signer_ix = Composers::SquadsSmartAccountsRemoveSignerAsAuthorityComposer.new(
+          settings:,
+          settings_authority:,
+          rent_payer:,
+          old_signer:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(remove_signer_ix)
       end
     end
   end

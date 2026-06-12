@@ -26,9 +26,9 @@ module Solace
 
         new(
           smart_account_index:        Solace::Utils::Codecs.decode_le_u128(io),
-          authority:                  Solace::Utils::Codecs.bytes_to_base58(io.read(32).bytes),
+          authority:                  Solace::Utils::Codecs.decode_pubkey(io),
           smart_account_creation_fee: Solace::Utils::Codecs.decode_le_u64(io),
-          treasury:                   Solace::Utils::Codecs.bytes_to_base58(io.read(32).bytes)
+          treasury:                   Solace::Utils::Codecs.decode_pubkey(io)
         )
       end
     end

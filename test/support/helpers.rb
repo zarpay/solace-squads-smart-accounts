@@ -3,7 +3,6 @@
 # Shared helpers for integration test setup. Included into Minitest::Test
 # below, so all methods are callable directly inside any test or describe block.
 module Helpers
-
   # Creates a smart account, waits for confirmation, and returns its identity.
   #
   # Wraps Programs::SquadsSmartAccount#create_smart_account for tests that
@@ -18,7 +17,7 @@ module Helpers
     identity = program.next_smart_account
 
     tx = program.create_smart_account(
-      payer: payer,
+      payer:,
       settings_seed: identity.settings_seed,
       **composer_opts
     )

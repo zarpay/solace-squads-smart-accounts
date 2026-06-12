@@ -32,7 +32,7 @@ module Solace
 
         new(
           seed:                    Solace::Utils::Codecs.decode_le_u128(io),
-          settings_authority:      Solace::Utils::Codecs.bytes_to_base58(io.read(32).bytes),
+          settings_authority:      Solace::Utils::Codecs.decode_pubkey(io),
           threshold:               Solace::Utils::Codecs.decode_le_u16(io),
           time_lock:               Solace::Utils::Codecs.decode_le_u32(io),
           transaction_index:       Solace::Utils::Codecs.decode_le_u64(io),
