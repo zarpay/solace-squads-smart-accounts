@@ -30,6 +30,49 @@ module Solace
         [u128 & 0xFFFFFFFFFFFFFFFF, u128 >> 64].pack('Q<Q<')
       end
 
+      # Encodes a public key as 32 bytes. Accepts any representation that
+      # resolves to a base58 string via #to_s (String, Keypair, PublicKey).
+      #
+      # @param pubkey [#to_s] The public key in any representation.
+      # @return [Array<Integer>] 32 bytes.
+      def self.encode_pubkey(pubkey)
+        Solace::Utils::Codecs.base58_to_bytes(pubkey.to_s)
+      end
+
+      # Encodes an i64 as 8 little-endian bytes (two's complement).
+      #
+      # @param i64 [Integer] Value in range -2**63..2**63-1.
+      # @return [String] 8-byte little-endian binary string.
+      def self.encode_le_i64(i64)
+        [i64].pack('q<')
+      end
+
+      # Decodes an i64 from 8 little-endian bytes (two's complement).
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [Integer] Value in range -2**63..2**63-1.
+      def self.decode_le_i64(stream)
+        stream.read(8).unpack1('q<')
+      end
+
+      # Encodes a Vec<publicKey> in Borsh format.
+      # u32 LE count prefix followed by each 32-byte pubkey.
+      #
+      # @param pubkeys [Array<#to_s>] The public keys in any representation.
+      # @return [Array<Integer>]
+      def self.encode_vec_pubkeys(pubkeys)
+        encode_le_u32(pubkeys.length).bytes +
+          pubkeys.flat_map { |pubkey| encode_pubkey(pubkey) }
+      end
+
+      # Decodes a Vec<publicKey> in Borsh format.
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [Array<String>] Base58 public keys.
+      def self.decode_vec_pubkeys(stream)
+        Array.new(decode_le_u32(stream)) { decode_pubkey(stream) }
+      end
+
       # Encodes an Option<publicKey> in Borsh format.
       # None → [0], Some(key) → [1] + 32 bytes.
       #
@@ -38,7 +81,7 @@ module Solace
       def self.encode_option_pubkey(pubkey)
         return [0] if pubkey.nil?
 
-        [1] + Solace::Utils::Codecs.base58_to_bytes(pubkey)
+        [1] + encode_pubkey(pubkey)
       end
 
       # Encodes an Option<String> in Borsh format.
@@ -61,7 +104,7 @@ module Solace
       def self.encode_smart_account_signers(signers)
         encode_le_u32(signers.length).bytes +
           signers.flat_map do |signer|
-            Solace::Utils::Codecs.base58_to_bytes(signer.pubkey) + [signer.permission]
+            encode_pubkey(signer.pubkey) + [signer.permission]
           end
       end
 

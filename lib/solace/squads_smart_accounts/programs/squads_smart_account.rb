@@ -43,7 +43,24 @@ module Solace
         # @return [Array<String, Integer>] The vault address and bump seed.
         def get_smart_account_address(settings_address:, account_index: 0)
           Solace::Utils::PDA.find_program_address(
-            ['smart_account', settings_address, 'smart_account', [account_index]],
+            ['smart_account', settings_address.to_s, 'smart_account', [account_index]],
+            Solace::SquadsSmartAccounts::PROGRAM_ID
+          )
+        end
+
+        # Gets the address of a SpendingLimit PDA.
+        #
+        # The on-chain derivation is
+        # ["smart_account", settings_pda, "spending_limit", seed_pubkey] — the
+        # seed is an arbitrary client-generated pubkey that uniquely identifies
+        # the limit under its settings account.
+        #
+        # @param settings_address [#to_s] Base58 address of the settings account.
+        # @param seed [#to_s] The pubkey the limit is (or will be) seeded with.
+        # @return [Array<String, Integer>] The spending limit address and bump seed.
+        def get_spending_limit_address(settings_address:, seed:)
+          Solace::Utils::PDA.find_program_address(
+            ['smart_account', settings_address.to_s, 'spending_limit', seed.to_s],
             Solace::SquadsSmartAccounts::PROGRAM_ID
           )
         end
@@ -70,6 +87,28 @@ module Solace
       # @return [Array<String, Integer>] The vault address and bump seed.
       def get_smart_account_address(**options)
         self.class.get_smart_account_address(**options)
+      end
+
+      # Alias method for get_spending_limit_address
+      #
+      # @param options [Hash] A hash of options for the get_spending_limit_address class method
+      # @return [Array<String, Integer>] The spending limit address and bump seed.
+      def get_spending_limit_address(**options)
+        self.class.get_spending_limit_address(**options)
+      end
+
+      # Fetches and deserializes a SpendingLimit account from the chain.
+      #
+      # @param spending_limit_address [#to_s] Base58 address of the spending limit account.
+      # @return [SquadsSmartAccounts::SpendingLimit] The deserialized spending limit.
+      # @raise [RuntimeError] If the account does not exist at the given address.
+      def get_spending_limit(spending_limit_address:)
+        account = connection.get_account_info(spending_limit_address.to_s)
+        raise "SpendingLimit account not found at #{spending_limit_address}" unless account
+
+        Solace::SquadsSmartAccounts::SpendingLimit.deserialize(
+          Solace::Utils::Codecs.base64_to_bytestream(account['data'][0])
+        )
       end
 
       # Fetches and deserializes the global ProgramConfig account from the chain.
@@ -646,6 +685,8 @@ module Solace
       # @param signers [Array<#to_s, Keypair>] Co-signers proving threshold consensus.
       # @param actions [Array<SquadsSmartAccounts::SettingsAction>] Actions applied atomically.
       # @param rent_payer [#to_s, Keypair] Pays for settings reallocation.
+      # @param spending_limit_accounts [Array<#to_s>] (Optional) SpendingLimit PDAs
+      #   initialized or closed by spending-limit actions, in action order.
       # @param memo [String] (Optional) Indexing memo.
       # @return [TransactionComposer] A composer with required instructions.
       def compose_execute_settings_transaction_sync(
@@ -653,6 +694,7 @@ module Solace
         signers:,
         actions:,
         rent_payer:,
+        spending_limit_accounts: [],
         memo: nil
       )
         settings_sync_ix = Composers::SquadsSmartAccountsExecuteSettingsTransactionSyncComposer.new(
@@ -660,12 +702,241 @@ module Solace
           signers:,
           actions:,
           rent_payer:,
+          spending_limit_accounts:,
           memo:
         )
 
         TransactionComposer
           .new(connection:)
           .add_instruction(settings_sync_ix)
+      end
+
+      # Creates a spending limit on a controlled smart account, signs with the
+      # settings authority, and (optionally) sends it.
+      #
+      # @example Grant a member a daily SOL allowance
+      #   spending_limit, = program.get_spending_limit_address(
+      #     settings_address: identity.settings_address, seed:
+      #   )
+      #
+      #   tx = program.add_spending_limit_as_authority(
+      #     payer: authority,
+      #     settings: identity.settings_address,
+      #     settings_authority: authority,
+      #     rent_payer: authority,
+      #     spending_limit:,
+      #     seed:,
+      #     amount: 500_000_000,
+      #     period: Period::DAY,
+      #     signers: [member.address]
+      #   )
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_add_spending_limit_as_authority}.
+      # @return [Transaction] The created or sent transaction.
+      def add_spending_limit_as_authority(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_add_spending_limit_as_authority(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:settings_authority], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares an add-spending-limit-as-authority transaction.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param settings_authority [#to_s, Keypair] The account's settings authority.
+      # @param spending_limit [#to_s] The SpendingLimit PDA to create.
+      # @param rent_payer [#to_s, Keypair] Funds the new account's rent.
+      # @param seed [#to_s] The pubkey the spending_limit PDA was derived with.
+      # @param amount [Integer] Amount spendable per period (mint decimals).
+      # @param period [Integer] Period enum value (reset cadence).
+      # @param signers [Array<#to_s>] Pubkeys allowed to use the limit.
+      # @param account_index [Integer] (Optional) Vault index (default: 0).
+      # @param mint [#to_s] (Optional) Token mint (default: DEFAULT_PUBKEY = SOL).
+      # @param destinations [Array<#to_s>] (Optional) Allowed destinations; empty = any.
+      # @param expiration [Integer] (Optional) Unix expiration (default: I64_MAX = never).
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_add_spending_limit_as_authority(
+        settings:,
+        settings_authority:,
+        spending_limit:,
+        rent_payer:,
+        seed:,
+        amount:,
+        period:,
+        signers:,
+        account_index: 0,
+        mint: Solace::SquadsSmartAccounts::DEFAULT_PUBKEY,
+        destinations: [],
+        expiration: Solace::SquadsSmartAccounts::I64_MAX,
+        memo: nil
+      )
+        add_spending_limit_ix = Composers::SquadsSmartAccountsAddSpendingLimitAsAuthorityComposer.new(
+          settings:,
+          settings_authority:,
+          spending_limit:,
+          rent_payer:,
+          seed:,
+          amount:,
+          period:,
+          signers:,
+          account_index:,
+          mint:,
+          destinations:,
+          expiration:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(add_spending_limit_ix)
+      end
+
+      # Transfers SOL from a vault within a pre-authorized spending limit,
+      # signs with the allowed signer, and (optionally) sends it.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_use_spending_limit}.
+      # @return [Transaction] The created or sent transaction.
+      def use_spending_limit(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_use_spending_limit(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:signer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a use-spending-limit transaction (SOL limits only for now).
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param signer [#to_s, Keypair] An allowed signer of the spending limit.
+      # @param spending_limit [#to_s] The SpendingLimit PDA to spend against.
+      # @param smart_account [#to_s] The vault to transfer from.
+      # @param destination [#to_s] The destination account.
+      # @param amount [Integer] Lamports to transfer.
+      # @param decimals [Integer] (Optional) Mint decimals, 9 for SOL (default: 9).
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_use_spending_limit(
+        settings:,
+        signer:,
+        spending_limit:,
+        smart_account:,
+        destination:,
+        amount:,
+        decimals: 9,
+        memo: nil
+      )
+        use_spending_limit_ix = Composers::SquadsSmartAccountsUseSpendingLimitComposer.new(
+          settings:,
+          signer:,
+          spending_limit:,
+          smart_account:,
+          destination:,
+          amount:,
+          decimals:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(use_spending_limit_ix)
+      end
+
+      # Removes a spending limit from a controlled smart account, signs with the
+      # settings authority, and (optionally) sends it. The closed account's rent
+      # is refunded to the rent collector.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_remove_spending_limit_as_authority}.
+      # @return [Transaction] The created or sent transaction.
+      def remove_spending_limit_as_authority(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_remove_spending_limit_as_authority(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:settings_authority])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a remove-spending-limit-as-authority transaction.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param settings_authority [#to_s, Keypair] The account's settings authority.
+      # @param spending_limit [#to_s] The SpendingLimit PDA to close.
+      # @param rent_collector [#to_s] Receives the closed account's rent (does not sign).
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_remove_spending_limit_as_authority(
+        settings:,
+        settings_authority:,
+        spending_limit:,
+        rent_collector:,
+        memo: nil
+      )
+        remove_spending_limit_ix = Composers::SquadsSmartAccountsRemoveSpendingLimitAsAuthorityComposer.new(
+          settings:,
+          settings_authority:,
+          spending_limit:,
+          rent_collector:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(remove_spending_limit_ix)
       end
     end
   end

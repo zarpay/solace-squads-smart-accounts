@@ -16,7 +16,12 @@ module Solace
 
     # Base58 of Pubkey::default() (32 zero bytes). The program stores this as
     # the settings_authority of autonomous smart accounts; handing the authority
-    # to this key permanently renounces control (nobody can sign as it).
+    # to this key permanently renounces control (nobody can sign as it). It also
+    # marks SOL (as opposed to an SPL mint) in spending limits.
     DEFAULT_PUBKEY = '11111111111111111111111111111111'
+
+    # Maximum i64 value. The program uses this as the expiration of
+    # non-expiring spending limits.
+    I64_MAX = 9_223_372_036_854_775_807
   end
 end

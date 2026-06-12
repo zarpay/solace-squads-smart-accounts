@@ -58,7 +58,7 @@ module Solace
         # @return [Array<Integer>] Byte array of the encoded instruction data.
         def self.data(new_signer:, memo:)
           DISCRIMINATOR +
-            Solace::Utils::Codecs.base58_to_bytes(new_signer.pubkey) +
+            Solace::Utils::Codecs.encode_pubkey(new_signer.pubkey) +
             [new_signer.permission] +
             Solace::Utils::Codecs.encode_option_string(memo)
         end

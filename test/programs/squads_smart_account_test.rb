@@ -77,6 +77,37 @@ describe Solace::Programs::SquadsSmartAccount do
     end
   end
 
+  describe '.get_spending_limit_address' do
+    let(:settings_address) { klass.get_settings_address(settings_seed: 42).first }
+    let(:seed) { Solace::Keypair.generate }
+
+    it 'derives the spending limit PDA from the documented seeds' do
+      expected_address, expected_bump = Solace::Utils::PDA.find_program_address(
+        ['smart_account', settings_address, 'spending_limit', seed.address],
+        Solace::SquadsSmartAccounts::PROGRAM_ID
+      )
+
+      address, bump = klass.get_spending_limit_address(settings_address:, seed:)
+
+      assert_equal expected_address, address
+      assert_equal expected_bump, bump
+    end
+
+    it 'is available as an instance method' do
+      assert_equal klass.get_spending_limit_address(settings_address:, seed:),
+                   program.get_spending_limit_address(settings_address:, seed:)
+    end
+  end
+
+  describe '#get_spending_limit' do
+    it 'raises when no spending limit account exists at the address' do
+      missing = Solace::Keypair.generate.address
+
+      error = assert_raises(RuntimeError) { program.get_spending_limit(spending_limit_address: missing) }
+      assert_match(/not found/, error.message)
+    end
+  end
+
   describe '#get_program_config' do
     it 'fetches and deserializes the global program config' do
       config = program.get_program_config
@@ -1139,6 +1170,379 @@ describe Solace::Programs::SquadsSmartAccount do
         end
 
         assert_kind_of Solace::Errors::RPCError, error
+      end
+    end
+
+    describe 'managing spending limits on an autonomous account' do
+      let(:period) { Solace::SquadsSmartAccounts::Period }
+
+      before(:all) do
+        # Autonomous 1-of-1 account with a funded default vault.
+        @identity = create_smart_account(
+          program,
+          payer:     creator,
+          creator:,
+          threshold: 1,
+          signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        fund_account(connection, @identity.smart_account_address, 1_000_000_000)
+
+        @seed     = Solace::Keypair.generate
+        @delegate = Solace::Keypair.generate
+
+        @spending_limit_address, = program.get_spending_limit_address(
+          settings_address: @identity.settings_address,
+          seed:             @seed
+        )
+
+        # 1. Grant the limit through consensus (AddSpendingLimit action).
+        tx = program.execute_settings_transaction_sync(
+          payer:                   creator,
+          settings:                @identity.settings_address,
+          signers:                 [creator],
+          rent_payer:              creator,
+          spending_limit_accounts: [@spending_limit_address],
+          actions:                 [
+            action_klass.add_spending_limit(
+              seed:          @seed,
+              account_index: 0,
+              mint:          Solace::SquadsSmartAccounts::DEFAULT_PUBKEY,
+              amount:        300_000_000,
+              period:        period::DAY,
+              signers:       [@delegate.address],
+              destinations:  [],
+              expiration:    Solace::SquadsSmartAccounts::I64_MAX
+            )
+          ]
+        )
+        connection.wait_for_confirmed_signature { tx.signature }
+
+        @spending_limit = program.get_spending_limit(spending_limit_address: @spending_limit_address)
+
+        # 2. The delegate spends within the limit (sponsored by creator).
+        @recipient = Solace::Keypair.generate
+
+        tx = program.use_spending_limit(
+          payer:          creator,
+          settings:       @identity.settings_address,
+          signer:         @delegate,
+          spending_limit: @spending_limit_address,
+          smart_account:  @identity.smart_account_address,
+          destination:    @recipient.address,
+          amount:         100_000_000
+        )
+        connection.wait_for_confirmed_signature { tx.signature }
+
+        # 3. Revoke the limit through consensus (RemoveSpendingLimit action).
+        tx = program.execute_settings_transaction_sync(
+          payer:                   creator,
+          settings:                @identity.settings_address,
+          signers:                 [creator],
+          rent_payer:              creator,
+          spending_limit_accounts: [@spending_limit_address],
+          actions:                 [action_klass.remove_spending_limit(@spending_limit_address)]
+        )
+        connection.wait_for_confirmed_signature { tx.signature }
+      end
+
+      it 'creates the spending limit through consensus' do
+        assert_equal 300_000_000, @spending_limit.amount
+        assert_equal [@delegate.address], @spending_limit.signers
+      end
+
+      it 'lets the delegate spend within the limit' do
+        assert_equal 100_000_000, connection.get_balance(@recipient.address)
+      end
+
+      it 'closes the spending limit through consensus' do
+        assert_nil connection.get_account_info(@spending_limit_address)
+      end
+    end
+  end
+
+  describe '#add_spending_limit_as_authority' do
+    let(:period) { Solace::SquadsSmartAccounts::Period }
+
+    describe 'when the authority pays for the transaction' do
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        @seed = Solace::Keypair.generate
+
+        @spending_limit_address, = program.get_spending_limit_address(
+          settings_address: @identity.settings_address,
+          seed:             @seed
+        )
+
+        @tx = program.add_spending_limit_as_authority(
+          payer:              creator,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         creator,
+          spending_limit:     @spending_limit_address,
+          seed:               @seed,
+          amount:             100_000_000,
+          period:             period::WEEK,
+          signers:            [creator.address]
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @spending_limit = program.get_spending_limit(spending_limit_address: @spending_limit_address)
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'creates the spending limit' do
+        assert_equal 100_000_000, @spending_limit.amount
+        assert_equal period::WEEK, @spending_limit.period
+        assert_equal [creator.address], @spending_limit.signers
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        @identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        @seed = Solace::Keypair.generate
+
+        @spending_limit_address, = program.get_spending_limit_address(
+          settings_address: @identity.settings_address,
+          seed:             @seed
+        )
+
+        @creator_starting_balance = connection.get_balance(creator.address)
+
+        # The sponsor pays the fee and the new account's rent; the authority only signs.
+        @tx = program.add_spending_limit_as_authority(
+          payer:,
+          settings:           @identity.settings_address,
+          settings_authority: creator,
+          rent_payer:         payer,
+          spending_limit:     @spending_limit_address,
+          seed:               @seed,
+          amount:             100_000_000,
+          period:             period::WEEK,
+          signers:            [creator.address]
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @spending_limit = program.get_spending_limit(spending_limit_address: @spending_limit_address)
+
+        @creator_ending_balance = connection.get_balance(creator.address)
+      end
+
+      it 'creates the spending limit' do
+        assert_equal 100_000_000, @spending_limit.amount
+      end
+
+      it 'deducts nothing from the authority' do
+        assert_equal @creator_starting_balance, @creator_ending_balance
+      end
+    end
+  end
+
+  describe '#use_spending_limit' do
+    let(:period) { Solace::SquadsSmartAccounts::Period }
+
+    # Creates a controlled account with a SOL spending limit granted to a
+    # non-member delegate key, funds the vault, and returns
+    # [settings_address, vault_address, spending_limit_address].
+    #
+    # The delegate is deliberately NOT a member of the smart account: the
+    # program only checks the limit's own signer list at use time, making
+    # non-member delegation (hot keys, agents) the primary use case.
+    def grant_funded_spending_limit(delegate)
+      identity = create_smart_account(
+        program,
+        payer:              creator,
+        creator:,
+        threshold:          1,
+        settings_authority: creator.address,
+        signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+      )
+
+      spending_limit_address = grant_spending_limit(
+        program,
+        identity:,
+        authority: creator,
+        delegate:  delegate.address,
+        amount:    500_000_000,
+        period:    period::DAY
+      )
+
+      fund_account(connection, identity.smart_account_address, 1_000_000_000)
+
+      [identity.settings_address, identity.smart_account_address, spending_limit_address]
+    end
+
+    describe 'when the delegate pays for the transaction' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        # The payer fixture acts as a funded, non-member delegate.
+        @settings_address, @vault_address, @spending_limit_address = grant_funded_spending_limit(payer)
+        @recipient = Solace::Keypair.generate
+
+        @tx = program.use_spending_limit(
+          payer:,
+          settings:       @settings_address,
+          signer:         payer,
+          spending_limit: @spending_limit_address,
+          smart_account:  @vault_address,
+          destination:    @recipient.address,
+          amount:         150_000_000
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'transfers the amount and decrements the allowance' do
+        assert_equal 150_000_000, connection.get_balance(@recipient.address)
+
+        spending_limit = program.get_spending_limit(spending_limit_address: @spending_limit_address)
+        assert_equal 350_000_000, spending_limit.remaining_amount
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        # A fresh, unfunded keypair as the delegate: it only signs — the
+        # sponsor pays the fee, proving fully gasless delegated spending.
+        @delegate = Solace::Keypair.generate
+
+        @settings_address, @vault_address, @spending_limit_address = grant_funded_spending_limit(@delegate)
+        @recipient = Solace::Keypair.generate
+
+        @tx = program.use_spending_limit(
+          payer:,
+          settings:       @settings_address,
+          signer:         @delegate,
+          spending_limit: @spending_limit_address,
+          smart_account:  @vault_address,
+          destination:    @recipient.address,
+          amount:         150_000_000
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+      end
+
+      it 'transfers the amount to the destination' do
+        assert_equal 150_000_000, connection.get_balance(@recipient.address)
+      end
+
+      it 'lets an unfunded delegate spend without holding any SOL' do
+        assert_equal 0, connection.get_balance(@delegate.address)
+      end
+    end
+  end
+
+  describe '#remove_spending_limit_as_authority' do
+    let(:period) { Solace::SquadsSmartAccounts::Period }
+
+    # Creates a controlled account with a spending limit and returns
+    # [settings_address, spending_limit_address].
+    def grant_removable_spending_limit
+      identity = create_smart_account(
+        program,
+        payer:              creator,
+        creator:,
+        threshold:          1,
+        settings_authority: creator.address,
+        signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+      )
+
+      spending_limit_address = grant_spending_limit(
+        program,
+        identity:,
+        authority: creator,
+        delegate:  Solace::Keypair.generate.address,
+        amount:    100_000_000,
+        period:    period::DAY
+      )
+
+      [identity.settings_address, spending_limit_address]
+    end
+
+    describe 'when the authority pays for the transaction' do
+      before(:all) do
+        @settings_address, @spending_limit_address = grant_removable_spending_limit
+
+        @tx = program.remove_spending_limit_as_authority(
+          payer:              creator,
+          settings:           @settings_address,
+          settings_authority: creator,
+          spending_limit:     @spending_limit_address,
+          rent_collector:     creator.address
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'closes the spending limit account' do
+        assert_nil connection.get_account_info(@spending_limit_address)
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      let(:payer) { fixtures.load_keypair('payer') }
+
+      before(:all) do
+        @settings_address, @spending_limit_address = grant_removable_spending_limit
+
+        @creator_starting_balance = connection.get_balance(creator.address)
+        @spending_limit_rent      = connection.get_balance(@spending_limit_address)
+
+        # The sponsor pays the fee; the rent refund still goes to the authority.
+        @tx = program.remove_spending_limit_as_authority(
+          payer:,
+          settings:           @settings_address,
+          settings_authority: creator,
+          spending_limit:     @spending_limit_address,
+          rent_collector:     creator.address
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @creator_ending_balance = connection.get_balance(creator.address)
+      end
+
+      it 'closes the spending limit account' do
+        assert_nil connection.get_account_info(@spending_limit_address)
+      end
+
+      it 'credits the rent refund to the rent collector' do
+        assert_equal @creator_starting_balance + @spending_limit_rent, @creator_ending_balance
       end
     end
   end

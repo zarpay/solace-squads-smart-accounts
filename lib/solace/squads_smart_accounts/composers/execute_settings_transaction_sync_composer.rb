@@ -17,6 +17,9 @@ module Solace
     #   :rent_payer [#to_s, Keypair]         Pays for settings reallocation (must sign).
     #
     # Optional params:
+    #   :spending_limit_accounts [Array<#to_s>] SpendingLimit PDAs initialized or
+    #                            closed by AddSpendingLimit/RemoveSpendingLimit
+    #                            actions, in action order (default: []).
     #   :memo [String] Indexing memo (default: nil).
     class SquadsSmartAccountsExecuteSettingsTransactionSyncComposer < Base
       # Extracts the settings address from the params
@@ -45,6 +48,13 @@ module Solace
       # @return [String] The rent payer address
       def rent_payer
         params[:rent_payer].to_s
+      end
+
+      # Extracts the spending limit PDAs touched by the actions from the params
+      #
+      # @return [Array<String>] The spending limit addresses (defaults to [])
+      def spending_limit_accounts
+        (params[:spending_limit_accounts] || []).map(&:to_s)
       end
 
       # Extracts the memo from the params
@@ -77,6 +87,9 @@ module Solace
 
         # Co-signers proving threshold consensus (remaining accounts)
         signers.each { |signer| account_context.add_readonly_signer(signer) }
+
+        # SpendingLimit PDAs initialized/closed by the actions follow the signers
+        spending_limit_accounts.each { |account| account_context.add_writable_nonsigner(account) }
       end
 
       # Builds the instruction with resolved account indices.
@@ -85,14 +98,15 @@ module Solace
       # @return [Solace::Instruction]
       def build_instruction(context)
         SquadsSmartAccounts::Instructions::ExecuteSettingsTransactionSyncInstruction.build(
-          num_signers:          signers.length,
+          num_signers:            signers.length,
           actions:,
           memo:,
-          settings_index:       context.index_of(settings),
-          rent_payer_index:     context.index_of(rent_payer),
-          system_program_index: context.index_of(system_program),
-          program_index:        context.index_of(program_id),
-          signer_indices:       signers.map { |signer| context.index_of(signer) }
+          settings_index:         context.index_of(settings),
+          rent_payer_index:       context.index_of(rent_payer),
+          system_program_index:   context.index_of(system_program),
+          program_index:          context.index_of(program_id),
+          signer_indices:         signers.map { |signer| context.index_of(signer) },
+          spending_limit_indices: spending_limit_accounts.map { |account| context.index_of(account) }
         )
       end
     end

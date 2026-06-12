@@ -24,9 +24,11 @@ Metrics/MethodLength:
   Max: 25
 
 # Composers enumerate one account declaration and one index resolution per
-# on-chain account; the default of 17 flags that enumeration, not complexity.
+# on-chain account, plus one kwarg per IDL arg field; the default of 17 flags
+# that enumeration, not complexity. 25 fits the largest IDL instruction
+# (addSpendingLimit: 9 args + 6 accounts) while still catching real branching.
 Metrics/AbcSize:
-  Max: 20
+  Max: 25
 
 # Program classes grow by one send-and-sign + compose method pair per IDL
 # instruction; length reflects program surface area, not complexity.

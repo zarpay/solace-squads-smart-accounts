@@ -22,7 +22,7 @@ method on `Solace::Programs::SquadsSmartAccount`.
 
 - [ ] `createSettingsTransaction` — Create a settings transaction
 - [ ] `executeSettingsTransaction` — Execute a settings transaction
-- [x] `executeSettingsTransactionSync` — Synchronously execute a settings transaction (+ program method `execute_settings_transaction_sync`; SettingsAction variants AddSigner/RemoveSigner/ChangeThreshold/SetTimeLock — spending-limit and archival variants pending their arcs)
+- [x] `executeSettingsTransactionSync` — Synchronously execute a settings transaction (+ program method `execute_settings_transaction_sync`; all SettingsAction variants except SetArchivalAuthority, which is skipped with the archival feature)
 - [ ] `closeSettingsTransaction` — Close a settings transaction and its proposal
 
 ## Authority Actions (controlled accounts)
@@ -42,12 +42,16 @@ method on `Solace::Programs::SquadsSmartAccount`.
 
 ## Spending Limits
 
-Implement as one arc — the three instructions only make sense together
-(authority grants a limit, signer spends within it, authority revokes it).
+SOL limits fully supported across both account modes: controlled accounts manage
+limits via the *AsAuthority instructions; autonomous accounts via
+AddSpendingLimit/RemoveSpendingLimit SettingsActions through
+`executeSettingsTransactionSync`. SPL token limits are a pending increment
+(useSpendingLimit's four SPL-only optional accounts currently carry the
+program ID, Anchor's absent-optional convention).
 
-- [ ] `addSpendingLimitAsAuthority` — Create a spending limit (SpendingLimit PDA, Period enum, signer/destination vecs)
-- [ ] `removeSpendingLimitAsAuthority` — Remove a spending limit
-- [ ] `useSpendingLimit` — Transfer tokens from a vault via a spending limit
+- [x] `addSpendingLimitAsAuthority` — Create a spending limit (+ program method `add_spending_limit_as_authority`)
+- [x] `removeSpendingLimitAsAuthority` — Remove a spending limit (+ program method `remove_spending_limit_as_authority`)
+- [x] `useSpendingLimit` — Transfer tokens from a vault via a spending limit (+ program method `use_spending_limit`; SOL only)
 
 ## Transaction Buffers (large transactions)
 

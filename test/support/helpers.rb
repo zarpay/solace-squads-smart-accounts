@@ -26,6 +26,51 @@ module Helpers
 
     identity
   end
+
+  # Grants a SOL spending limit on an existing controlled smart account and
+  # waits for confirmation. The authority pays all fees and rent.
+  #
+  # @param program [Solace::Programs::SquadsSmartAccount] The program client.
+  # @param identity [Solace::SquadsSmartAccounts::SmartAccountIdentity] The smart account.
+  # @param authority [Solace::Keypair] The settings authority (also pays).
+  # @param delegate [#to_s] The key allowed to use the limit.
+  # @param amount [Integer] Lamports spendable per period.
+  # @param period [Integer] Period enum value.
+  # @return [String] The spending limit PDA address.
+  def grant_spending_limit(program, identity:, authority:, delegate:, amount:, period:)
+    seed = Solace::Keypair.generate
+
+    spending_limit_address, = program.get_spending_limit_address(
+      settings_address: identity.settings_address,
+      seed:
+    )
+
+    tx = program.add_spending_limit_as_authority(
+      payer:              authority,
+      settings:           identity.settings_address,
+      settings_authority: authority,
+      rent_payer:         authority,
+      spending_limit:     spending_limit_address,
+      seed:,
+      amount:,
+      period:,
+      signers:            [delegate.to_s]
+    )
+    program.connection.wait_for_confirmed_signature { tx.signature }
+
+    spending_limit_address
+  end
+
+  # Airdrops lamports to an address and waits for confirmation.
+  #
+  # @param connection [Solace::Connection] An active RPC connection.
+  # @param address [#to_s] The address to fund.
+  # @param lamports [Integer] The amount to airdrop.
+  # @return [void]
+  def fund_account(connection, address, lamports)
+    signature = connection.request_airdrop(address.to_s, lamports)
+    connection.wait_for_confirmed_signature { signature['result'] }
+  end
 end
 
 # Make all helpers available as bare method calls in every test.

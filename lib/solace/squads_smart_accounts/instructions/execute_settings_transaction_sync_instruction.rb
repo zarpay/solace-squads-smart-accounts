@@ -18,8 +18,8 @@ module Solace
       #   3. program       — readonly, non-signer
       #   Remaining accounts (in exact order):
       #   4. The first `num_signers` accounts must be the threshold co-signers.
-      #      (SpendingLimit PDAs would follow for spending-limit actions — not
-      #      supported by this gem yet.)
+      #   5. SpendingLimit PDAs initialized/closed by AddSpendingLimit and
+      #      RemoveSpendingLimit actions follow, in action order.
       class ExecuteSettingsTransactionSyncInstruction
         # 8-byte Anchor discriminator: SHA256("global:execute_settings_transaction_sync")[0..7]
         DISCRIMINATOR = [138, 209, 64, 163, 79, 67, 233, 76].freeze
@@ -34,6 +34,8 @@ module Solace
         # @param system_program_index [Integer] Account index of systemProgram.
         # @param program_index [Integer] Account index of the Squads program.
         # @param signer_indices [Array<Integer>] Account indices of the threshold co-signers.
+        # @param spending_limit_indices [Array<Integer>] Account indices of SpendingLimit
+        #   PDAs touched by the actions (default: []).
         # @return [Solace::Instruction]
         def self.build(
           num_signers:,
@@ -43,7 +45,8 @@ module Solace
           rent_payer_index:,
           system_program_index:,
           program_index:,
-          signer_indices:
+          signer_indices:,
+          spending_limit_indices: []
         )
           Solace::Instruction.new.tap do |ix|
             ix.program_index = program_index
@@ -52,7 +55,8 @@ module Solace
               rent_payer_index,
               system_program_index,
               program_index,
-              *signer_indices
+              *signer_indices,
+              *spending_limit_indices
             ]
             ix.data = data(num_signers:, actions:, memo:)
           end
