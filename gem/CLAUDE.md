@@ -56,7 +56,7 @@ module Solace
       #                          add_readonly_signer, add_readonly_nonsigner, set_fee_payer
       def setup_accounts
         account_context.add_writable_signer(params[:payer].to_s)
-        account_context.add_writable_nonsigner(params[:multisig].to_s)
+        account_context.add_writable_nonsigner(params[:settings].to_s)
         account_context.add_readonly_nonsigner(SquadsSmartAccounts::PROGRAM_ID)
       end
 
@@ -66,7 +66,7 @@ module Solace
         SquadsSmartAccounts::Instructions::SomeInstruction.build(
           param:          params[:param],
           account_a_index: context.index_of(params[:payer].to_s),
-          account_b_index: context.index_of(params[:multisig].to_s),
+          account_b_index: context.index_of(params[:settings].to_s),
           program_index:   context.index_of(SquadsSmartAccounts::PROGRAM_ID)
         )
       end
