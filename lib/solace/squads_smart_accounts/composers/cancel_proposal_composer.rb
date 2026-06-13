@@ -2,19 +2,20 @@
 
 module Solace
   module Composers
-    # Composes an `approveProposal` instruction for the Squads Smart Account program.
+    # Composes a `cancelProposal` instruction for the Squads Smart Account program.
     #
-    # Casts an approval vote on an active proposal. The signer must be a smart
-    # account member with the Vote permission.
+    # Casts a cancellation vote on an Approved proposal. The signer must be a
+    # smart account member with the Vote permission. Unlike approve/reject, the
+    # System program is a required account (it funds the proposal realloc).
     #
     # Required params:
     #   :settings [#to_s]          Base58 address of the settings account.
     #   :signer   [#to_s, Keypair] The voting signer (must sign).
-    #   :proposal [#to_s]          The Proposal PDA to vote on.
+    #   :proposal [#to_s]          The Proposal PDA to cancel (must be Approved).
     #
     # Optional params:
     #   :memo [String] Indexing memo (default: nil).
-    class SquadsSmartAccountsApproveProposalComposer < Base
+    class SquadsSmartAccountsCancelProposalComposer < Base
       # Extracts the settings address from the params
       #
       # @return [String] The settings address
@@ -43,13 +44,18 @@ module Solace
         params[:memo]
       end
 
-      # Returns the Squads Smart Account program id from the constants. The
-      # systemProgram account is optional and absent for a vote, so this id
-      # also fills that slot.
+      # Returns the Squads Smart Account program id from the constants
       #
       # @return [String] The Squads Smart Account program id
       def program_id
         SquadsSmartAccounts::PROGRAM_ID
+      end
+
+      # Returns the system program id from the constants
+      #
+      # @return [String] The system program id
+      def system_program
+        Solace::Constants::SYSTEM_PROGRAM_ID
       end
 
       # Declares all accounts required by this instruction.
@@ -57,21 +63,21 @@ module Solace
         account_context.add_readonly_nonsigner(settings)
         account_context.add_writable_signer(signer)
         account_context.add_writable_nonsigner(proposal)
+        account_context.add_readonly_nonsigner(system_program)
         account_context.add_readonly_nonsigner(program_id)
       end
 
-      # Builds the instruction with resolved account indices. The absent
-      # systemProgram slot resolves to the Squads program id index.
+      # Builds the instruction with resolved account indices.
       #
       # @param context [Solace::Utils::AccountContext] Merged context from TransactionComposer.
       # @return [Solace::Instruction]
       def build_instruction(context)
-        SquadsSmartAccounts::Instructions::ApproveProposalInstruction.build(
+        SquadsSmartAccounts::Instructions::CancelProposalInstruction.build(
           memo:,
           settings_index:       context.index_of(settings),
           signer_index:         context.index_of(signer),
           proposal_index:       context.index_of(proposal),
-          system_program_index: context.index_of(program_id),
+          system_program_index: context.index_of(system_program),
           program_index:        context.index_of(program_id)
         )
       end

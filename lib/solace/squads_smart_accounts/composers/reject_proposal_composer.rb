@@ -54,7 +54,7 @@ module Solace
 
       # Declares all accounts required by this instruction.
       def setup_accounts
-        account_context.add_writable_nonsigner(settings)
+        account_context.add_readonly_nonsigner(settings)
         account_context.add_writable_signer(signer)
         account_context.add_writable_nonsigner(proposal)
         account_context.add_readonly_nonsigner(program_id)

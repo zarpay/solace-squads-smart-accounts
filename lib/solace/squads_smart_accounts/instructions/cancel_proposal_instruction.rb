@@ -3,32 +3,33 @@
 module Solace
   module SquadsSmartAccounts
     module Instructions
-      # Encodes the `approveProposal` instruction for the Squads Smart Account program.
+      # Encodes the `cancelProposal` instruction for the Squads Smart Account program.
       #
-      # Registers an approval vote on a proposal on behalf of a signer with the
-      # Vote permission. Once approvals reach the settings threshold the proposal
-      # becomes Approved and (after the time lock) its transaction can execute.
+      # Registers a cancellation vote on an Approved proposal on behalf of a
+      # signer with the Vote permission. Once cancellations reach the threshold
+      # the proposal becomes Cancelled and its transaction can no longer execute.
       #
       # Accounts (in order):
       #   0. settings      — readonly, non-signer (consensus account)
-      #   1. signer        — writable, signer (must have the Vote permission)
+      #   1. signer        — writable, signer (must have the Vote permission; pays any realloc)
       #   2. proposal      — writable, non-signer
-      #   3. systemProgram — optional; absent here, so the Squads program id fills the slot
+      #   3. systemProgram — required here (funds the proposal realloc) — unlike
+      #      approve/reject, where this optional account is absent
       #   4. program       — readonly, non-signer (the Squads program itself)
       #
-      # The trailing `program` account and the absent-optional-as-program-id slot
-      # follow the deployed program (see memory `reference-deployed-program-drift`).
-      class ApproveProposalInstruction
-        # 8-byte Anchor discriminator: SHA256("global:approve_proposal")[0..7]
-        DISCRIMINATOR = [136, 108, 102, 85, 98, 114, 7, 147].freeze
+      # Shares the VoteOnProposal account context and args with approve/reject;
+      # the discriminator differs and systemProgram is present rather than absent.
+      class CancelProposalInstruction
+        # 8-byte Anchor discriminator: SHA256("global:cancel_proposal")[0..7]
+        DISCRIMINATOR = [106, 74, 128, 146, 19, 65, 39, 23].freeze
 
-        # Builds a {Solace::Instruction} for approveProposal.
+        # Builds a {Solace::Instruction} for cancelProposal.
         #
         # @param memo [String, nil] Optional indexing memo.
         # @param settings_index [Integer] Account index of the settings account.
         # @param signer_index [Integer] Account index of the voting signer.
         # @param proposal_index [Integer] Account index of the proposal.
-        # @param system_program_index [Integer] Account index for the (absent) systemProgram slot.
+        # @param system_program_index [Integer] Account index of systemProgram.
         # @param program_index [Integer] Account index of the Squads program (the invoked program).
         # @return [Solace::Instruction]
         def self.build(

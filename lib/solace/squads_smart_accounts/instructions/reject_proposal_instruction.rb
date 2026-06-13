@@ -10,7 +10,7 @@ module Solace
       # proposal becomes Rejected and its transaction can never execute.
       #
       # Accounts (in order):
-      #   0. settings      — writable, non-signer (consensus account)
+      #   0. settings      — readonly, non-signer (consensus account)
       #   1. signer        — writable, signer (must have the Vote permission)
       #   2. proposal      — writable, non-signer
       #   3. systemProgram — optional; absent here, so the Squads program id fills the slot
