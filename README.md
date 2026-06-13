@@ -2,6 +2,10 @@
 
 Extension gem for [`solace`](https://github.com/sebscholl/solace) that adds support for the [Squads Smart Account](https://squads.so/) program on Solana (`SMRTzfY6DfH5ik3TKiyLFfXexV8uSG3d2UksSCYdunG`).
 
+📖 **Documentation:** https://zarpay.github.io/solace-squads-smart-accounts
+
+This repository is laid out with the gem in [`gem/`](gem/) and the documentation site in [`site/`](site/).
+
 ## Smart accounts vs. the Settings account
 
 The naming can be confusing: `createSmartAccount` does not create an account called "smart account". It creates a **Settings** account, and the smart account exists implicitly.
@@ -82,9 +86,23 @@ Note: the settings seed must match `program_config.smart_account_index + 1` at e
 
 ## Development
 
+All gem commands run from the `gem/` directory:
+
 ```sh
-bundle exec rake   # run all tests (starts a fresh validator, funds fixtures, stops it after)
-rake idl:compare   # diff the local Anchor IDL against upstream
+cd gem
+bundle install
+bundle exec rake        # run all tests (starts a fresh validator, funds fixtures, stops it after)
+bundle exec rubocop     # lint
+bundle exec rake idl:compare   # diff the local Anchor IDL against upstream
 ```
 
-Tests run against a local `solana-test-validator` started with a fresh ledger every run, with the Squads program cloned from mainnet-beta. Fixture accounts are funded automatically at suite start. See `CLAUDE.md` for architecture and contribution conventions.
+Tests run against a local `solana-test-validator` started with a fresh ledger every run, with the Squads program cloned from mainnet-beta. Fixture accounts are funded automatically at suite start. See `gem/CLAUDE.md` for architecture and contribution conventions.
+
+The documentation site is a [VitePress](https://vitepress.dev/) app in `site/`:
+
+```sh
+cd site
+npm install
+npm run dev     # local preview
+npm run build   # static build
+```

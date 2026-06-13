@@ -106,9 +106,11 @@ rake idl:compare   # fetches upstream IDL from GitHub and compares to local copy
 ## Tests
 
 ```sh
-bundle exec rake          # runs all tests (default task)
-SOLACE_PATH=../solace/lib bundle exec rake  # use local solace checkout
+bundle exec rake   # runs all tests (default task); solace comes from RubyGems
 ```
+
+All commands run from the `gem/` directory (the gem lives in `gem/`; the docs
+site lives in `site/`).
 
 Tests use Minitest. The test suite automatically starts a local `solana-test-validator` with a fresh ledger (`--reset`) and the Squads program cloned from mainnet-beta, funds the fixture accounts (`test/support/bootstrap.rb`), then stops the validator after the run. No state persists between runs. Always run the tests after making changes — don't wait for the user to ask.
 

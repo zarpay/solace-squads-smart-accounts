@@ -1,2 +1,8 @@
-# Local solana-test-validator ledger (recreated fresh on every test run)
-/test-ledger/
+/.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/builds/
+/tmp/
