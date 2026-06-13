@@ -10,12 +10,12 @@ method on `Solace::Programs::SquadsSmartAccount`.
 
 - [x] `createSmartAccount` — Create a smart account (+ program method `create_smart_account`)
 - [x] `createTransaction` — Create a new vault transaction (+ program method `create_transaction`; simple messages only — no ephemeral signers / ALTs. NOTE: deployed program uses the newer enum args + 6th `program` account, not the stale bundled IDL)
-- [ ] `createProposal` — Create a new proposal
-- [ ] `activateProposal` — Update proposal status from Draft to Active
-- [ ] `approveProposal` — Approve a proposal on behalf of a signer
-- [ ] `rejectProposal` — Reject a proposal on behalf of a signer
+- [x] `createProposal` — Create a new proposal (+ program method `create_proposal`)
+- [x] `activateProposal` — Update proposal status from Draft to Active (+ program method `activate_proposal`; the lone proposal instruction with NO trailing `program` account)
+- [x] `approveProposal` — Approve a proposal on behalf of a signer (+ program method `approve_proposal`)
+- [x] `rejectProposal` — Reject a proposal on behalf of a signer (+ program method `reject_proposal`)
 - [ ] `cancelProposal` — Cancel a proposal on behalf of a signer
-- [ ] `executeTransaction` — Execute a smart account transaction
+- [x] `executeTransaction` — Execute a smart account transaction (+ program method `execute_transaction`; replays the stored message's account metas as remaining accounts; simple messages only — no ephemeral signers / ALTs)
 - [x] `executeTransactionSync` — Synchronously execute a transaction (+ program method `execute_transaction_sync`)
 
 ## Settings Transactions (autonomous accounts)
@@ -95,3 +95,5 @@ config authority. Not needed for normal smart account usage.
 - [x] `next_smart_account` — full identity (seed, settings address, vault address) for client indexing
 - [x] `create_smart_account` / `compose_create_smart_account` — send-and-sign creation
 - [x] `execute_transaction_sync` / `compose_execute_transaction_sync` — send-and-sign vault spend
+- [x] `get_transaction_address` / `get_proposal_address` — async lifecycle PDA derivation
+- [x] `get_transaction` / `get_proposal` — fetch + deserialize async lifecycle state (`Transaction#account_metas` reconstructs execute remaining accounts)

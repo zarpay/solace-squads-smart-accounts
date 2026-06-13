@@ -48,6 +48,14 @@ module Solace
         [i64].pack('q<')
       end
 
+      # Encodes a Borsh bool as a single byte: false → 0, true → 1.
+      #
+      # @param bool [Boolean] The value to encode.
+      # @return [Array<Integer>] A single-element byte array.
+      def encode_bool(bool)
+        [bool ? 1 : 0]
+      end
+
       # Encodes a u128 as 16 little-endian bytes (two u64 words, low word first).
       #
       # @param u128 [Integer] Value in range 0..2**128-1.

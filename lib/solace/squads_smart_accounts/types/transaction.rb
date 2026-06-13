@@ -25,6 +25,37 @@ module Solace
       :num_writable_non_signers, # Integer — message: writable non-signers
       :account_keys              # Array<String> — message: base58 keys in canonical order
     ) do
+      # The stored message's account_keys as ordered account metas — the inverse
+      # of how AccountContext#compile lays them out. Each meta carries the same
+      # {signer:, writable:} flags vocabulary AccountContext uses, derived from
+      # the canonical ordering [writable signers, readonly signers, writable
+      # non-signers, readonly non-signers]. This is the input executeTransaction
+      # replays as its remaining accounts (the lone signer being the vault PDA).
+      #
+      # @return [Array<Hash>] Each { pubkey: String, signer: Boolean, writable: Boolean }.
+      def account_metas
+        account_keys.each_index.map do |index|
+          {
+            pubkey:   account_keys[index],
+            signer:   index < num_signers,
+            writable: writable_index?(index)
+          }
+        end
+      end
+
+      private
+
+      # Whether the account at the given canonical index is writable: writable
+      # signers occupy the leading positions, writable non-signers immediately
+      # follow the signer block.
+      #
+      # @param index [Integer] Position in account_keys.
+      # @return [Boolean]
+      def writable_index?(index)
+        index < num_writable_signers ||
+          (index >= num_signers && index < num_signers + num_writable_non_signers)
+      end
+
       class << self
         # Deserializes a Transaction account from a stream of Borsh-encoded account data.
         #

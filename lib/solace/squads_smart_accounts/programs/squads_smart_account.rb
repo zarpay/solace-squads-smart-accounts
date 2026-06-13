@@ -80,6 +80,23 @@ module Solace
             Solace::SquadsSmartAccounts::PROGRAM_ID
           )
         end
+
+        # Gets the address of a Proposal PDA.
+        #
+        # The on-chain derivation appends a trailing "proposal" marker to the
+        # transaction seeds:
+        # ["smart_account", settings_pda, "transaction", u64(transaction_index), "proposal"].
+        #
+        # @param settings_address [#to_s] Base58 address of the settings account.
+        # @param transaction_index [Integer] The transaction index the proposal tracks.
+        # @return [Array<String, Integer>] The proposal address and bump seed.
+        def get_proposal_address(settings_address:, transaction_index:)
+          Solace::Utils::PDA.find_program_address(
+            ['smart_account', settings_address.to_s, 'transaction',
+             Solace::Utils::Codecs.encode_le_u64(transaction_index).bytes, 'proposal'],
+            Solace::SquadsSmartAccounts::PROGRAM_ID
+          )
+        end
       end
 
       # Initializes a new Squads Smart Account client.
@@ -121,6 +138,14 @@ module Solace
         self.class.get_transaction_address(**options)
       end
 
+      # Alias method for get_proposal_address
+      #
+      # @param options [Hash] A hash of options for the get_proposal_address class method
+      # @return [Array<String, Integer>] The proposal address and bump seed.
+      def get_proposal_address(**options)
+        self.class.get_proposal_address(**options)
+      end
+
       # Fetches and deserializes a SpendingLimit account from the chain.
       #
       # @param spending_limit_address [#to_s] Base58 address of the spending limit account.
@@ -145,6 +170,20 @@ module Solace
         raise "Transaction account not found at #{transaction_address}" unless account
 
         Solace::SquadsSmartAccounts::Transaction.deserialize(
+          Solace::Utils::Codecs.base64_to_bytestream(account['data'][0])
+        )
+      end
+
+      # Fetches and deserializes a Proposal account from the chain.
+      #
+      # @param proposal_address [#to_s] Base58 address of the proposal account.
+      # @return [SquadsSmartAccounts::Proposal] The deserialized proposal.
+      # @raise [RuntimeError] If the account does not exist at the given address.
+      def get_proposal(proposal_address:)
+        account = connection.get_account_info(proposal_address.to_s)
+        raise "Proposal account not found at #{proposal_address}" unless account
+
+        Solace::SquadsSmartAccounts::Proposal.deserialize(
           Solace::Utils::Codecs.base64_to_bytestream(account['data'][0])
         )
       end
@@ -1076,6 +1115,343 @@ module Solace
         TransactionComposer
           .new(connection:)
           .add_instruction(create_transaction_ix)
+      end
+
+      # Creates a proposal for a stored transaction, signs it, and (optionally)
+      # sends it. A proposal created with the default `draft: false` starts
+      # Active (ready to vote); `draft: true` starts Draft and must be activated.
+      #
+      # @example Open voting on the transaction just created
+      #   tx = program.create_proposal(
+      #     payer: creator,
+      #     settings: identity.settings_address,
+      #     creator: creator,
+      #     rent_payer: creator,
+      #     transaction_index: 1
+      #   )
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_create_proposal}.
+      # @return [Transaction] The created or sent transaction.
+      def create_proposal(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_create_proposal(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:creator], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a create-proposal transaction. The Proposal PDA is derived from
+      # the settings address and transaction index here.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param creator [#to_s, Keypair] A smart-account signer creating the proposal (must sign).
+      # @param rent_payer [#to_s, Keypair] Funds the new account's rent.
+      # @param transaction_index [Integer] Index of the transaction this proposal tracks.
+      # @param draft [Boolean] (Optional) Initialize as Draft instead of Active (default: false).
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_create_proposal(
+        settings:,
+        creator:,
+        rent_payer:,
+        transaction_index:,
+        draft: false
+      )
+        proposal, = get_proposal_address(settings_address: settings.to_s, transaction_index:)
+
+        create_proposal_ix = Composers::SquadsSmartAccountsCreateProposalComposer.new(
+          settings:,
+          proposal:,
+          creator:,
+          rent_payer:,
+          transaction_index:,
+          draft:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(create_proposal_ix)
+      end
+
+      # Approves a proposal on behalf of a signer, signs it, and (optionally)
+      # sends it. The signer must be a smart-account member with the Vote
+      # permission; the proposal becomes Approved once approvals reach threshold.
+      #
+      # @example Approve the proposal for transaction index 1
+      #   tx = program.approve_proposal(
+      #     payer: creator,
+      #     settings: identity.settings_address,
+      #     signer: creator,
+      #     transaction_index: 1
+      #   )
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_approve_proposal}.
+      # @return [Transaction] The created or sent transaction.
+      def approve_proposal(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_approve_proposal(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:signer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares an approve-proposal transaction. The Proposal PDA is derived
+      # from the settings address and transaction index here.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param signer [#to_s, Keypair] The voting signer (must sign).
+      # @param transaction_index [Integer] Index of the transaction the proposal tracks.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_approve_proposal(
+        settings:,
+        signer:,
+        transaction_index:,
+        memo: nil
+      )
+        proposal, = get_proposal_address(settings_address: settings.to_s, transaction_index:)
+
+        approve_proposal_ix = Composers::SquadsSmartAccountsApproveProposalComposer.new(
+          settings:,
+          signer:,
+          proposal:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(approve_proposal_ix)
+      end
+
+      # Rejects a proposal on behalf of a signer, signs it, and (optionally)
+      # sends it. The signer must be a smart-account member with the Vote
+      # permission; the proposal becomes Rejected once rejections reach the cutoff.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_reject_proposal}.
+      # @return [Transaction] The created or sent transaction.
+      def reject_proposal(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_reject_proposal(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:signer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a reject-proposal transaction. The Proposal PDA is derived from
+      # the settings address and transaction index here.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param signer [#to_s, Keypair] The voting signer (must sign).
+      # @param transaction_index [Integer] Index of the transaction the proposal tracks.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_reject_proposal(
+        settings:,
+        signer:,
+        transaction_index:,
+        memo: nil
+      )
+        proposal, = get_proposal_address(settings_address: settings.to_s, transaction_index:)
+
+        reject_proposal_ix = Composers::SquadsSmartAccountsRejectProposalComposer.new(
+          settings:,
+          signer:,
+          proposal:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(reject_proposal_ix)
+      end
+
+      # Activates a draft proposal (Draft → Active), signs it, and (optionally)
+      # sends it. The signer must be a smart-account member with the Initiate
+      # permission. Only needed for proposals created with `draft: true`.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_activate_proposal}.
+      # @return [Transaction] The created or sent transaction.
+      def activate_proposal(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_activate_proposal(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:signer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares an activate-proposal transaction. The Proposal PDA is derived
+      # from the settings address and transaction index here.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param signer [#to_s, Keypair] The activating signer (must sign).
+      # @param transaction_index [Integer] Index of the transaction the proposal tracks.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_activate_proposal(
+        settings:,
+        signer:,
+        transaction_index:
+      )
+        proposal, = get_proposal_address(settings_address: settings.to_s, transaction_index:)
+
+        activate_proposal_ix = Composers::SquadsSmartAccountsActivateProposalComposer.new(
+          settings:,
+          signer:,
+          proposal:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(activate_proposal_ix)
+      end
+
+      # Executes an Approved proposal's stored transaction, signs it, and
+      # (optionally) sends it — moving the vault funds. The signer must be a
+      # smart-account member with the Execute permission, and the proposal must
+      # be Approved with its time lock elapsed.
+      #
+      # @example Execute the approved transaction at index 1
+      #   tx = program.execute_transaction(
+      #     payer: creator,
+      #     settings: identity.settings_address,
+      #     signer: creator,
+      #     transaction_index: 1
+      #   )
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_execute_transaction}.
+      # @return [Transaction] The created or sent transaction.
+      def execute_transaction(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_execute_transaction(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:signer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares an execute-transaction transaction. Fetches the stored
+      # Transaction to derive its vault and replay its account metas as the
+      # instruction's remaining accounts; the Transaction and Proposal PDAs are
+      # derived from the settings address and transaction index here.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param signer [#to_s, Keypair] The executing signer (must sign).
+      # @param transaction_index [Integer] Index of the transaction to execute.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_execute_transaction(
+        settings:,
+        signer:,
+        transaction_index:
+      )
+        transaction_address, = get_transaction_address(settings_address: settings.to_s, transaction_index:)
+        proposal_address,    = get_proposal_address(settings_address: settings.to_s, transaction_index:)
+
+        transaction = get_transaction(transaction_address:)
+
+        smart_account, = get_smart_account_address(
+          settings_address: settings.to_s,
+          account_index:    transaction.account_index
+        )
+
+        execute_transaction_ix = Composers::SquadsSmartAccountsExecuteTransactionComposer.new(
+          settings:,
+          proposal:      proposal_address,
+          transaction:   transaction_address,
+          signer:,
+          smart_account:,
+          account_metas: transaction.account_metas
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(execute_transaction_ix)
       end
 
       private

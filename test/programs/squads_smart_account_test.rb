@@ -1694,4 +1694,277 @@ describe Solace::Programs::SquadsSmartAccount do
       end
     end
   end
+
+  # The async transaction lifecycle: createProposal → (activate) → vote →
+  # executeTransaction. Each phase builds on a freshly funded 1-of-1 autonomous
+  # account whose first stored transaction (index 1) is a vault → recipient
+  # transfer.
+  describe 'async transaction lifecycle' do
+    let(:vault_funding)   { 1_000_000_000 }
+    let(:transfer_amount) { 250_000_000 }
+
+    # Creates a funded autonomous 1-of-1 account (creator pays and owns it).
+    def lifecycle_account
+      identity = create_smart_account(
+        program,
+        payer:     creator,
+        creator:,
+        threshold: 1,
+        signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+      )
+
+      fund_account(connection, identity.smart_account_address, vault_funding)
+      identity
+    end
+
+    # Stores a vault → recipient transfer as transaction index 1 and waits.
+    def store_transfer(identity:, recipient:)
+      tx = program.create_transaction(
+        payer:        creator,
+        settings:     identity.settings_address,
+        creator:,
+        rent_payer:   creator,
+        instructions: [
+          Solace::Composers::SystemProgramTransferComposer.new(
+            from:     identity.smart_account_address,
+            to:       recipient.address,
+            lamports: transfer_amount
+          )
+        ]
+      )
+
+      connection.wait_for_confirmed_signature { tx.signature }
+    end
+
+    # Opens a proposal for transaction index 1 and waits.
+    def open_proposal(identity:, draft: false)
+      tx = program.create_proposal(
+        payer:             creator,
+        settings:          identity.settings_address,
+        creator:,
+        rent_payer:        creator,
+        transaction_index: 1,
+        draft:
+      )
+
+      connection.wait_for_confirmed_signature { tx.signature }
+    end
+
+    # Fetches the current status of the index-1 proposal.
+    def proposal_status(identity:)
+      proposal_address, = program.get_proposal_address(
+        settings_address:  identity.settings_address,
+        transaction_index: 1
+      )
+
+      program.get_proposal(proposal_address:).status
+    end
+
+    describe '#create_proposal' do
+      before(:all) do
+        @identity  = lifecycle_account
+        @recipient = Solace::Keypair.generate
+        store_transfer(identity: @identity, recipient: @recipient)
+
+        @tx = program.create_proposal(
+          payer:             creator,
+          settings:          @identity.settings_address,
+          creator:,
+          rent_payer:        creator,
+          transaction_index: 1
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @status = proposal_status(identity: @identity)
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'opens the proposal in the active state' do
+        assert_equal :active, @status
+      end
+    end
+
+    describe '#activate_proposal' do
+      before(:all) do
+        @identity  = lifecycle_account
+        @recipient = Solace::Keypair.generate
+        store_transfer(identity: @identity, recipient: @recipient)
+        open_proposal(identity: @identity, draft: true)
+
+        @draft_status = proposal_status(identity: @identity)
+
+        @tx = program.activate_proposal(
+          payer:             creator,
+          settings:          @identity.settings_address,
+          signer:            creator,
+          transaction_index: 1
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @active_status = proposal_status(identity: @identity)
+      end
+
+      it 'starts the proposal as a draft' do
+        assert_equal :draft, @draft_status
+      end
+
+      it 'transitions the proposal to active' do
+        assert_equal :active, @active_status
+      end
+    end
+
+    describe '#approve_proposal' do
+      before(:all) do
+        @identity  = lifecycle_account
+        @recipient = Solace::Keypair.generate
+        store_transfer(identity: @identity, recipient: @recipient)
+        open_proposal(identity: @identity)
+
+        @tx = program.approve_proposal(
+          payer:             creator,
+          settings:          @identity.settings_address,
+          signer:            creator,
+          transaction_index: 1
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @status = proposal_status(identity: @identity)
+      end
+
+      it 'marks the proposal approved once approvals reach the threshold' do
+        assert_equal :approved, @status
+      end
+    end
+
+    describe '#reject_proposal' do
+      before(:all) do
+        @identity  = lifecycle_account
+        @recipient = Solace::Keypair.generate
+        store_transfer(identity: @identity, recipient: @recipient)
+        open_proposal(identity: @identity)
+
+        @tx = program.reject_proposal(
+          payer:             creator,
+          settings:          @identity.settings_address,
+          signer:            creator,
+          transaction_index: 1
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @status = proposal_status(identity: @identity)
+      end
+
+      it 'marks the proposal rejected once rejections reach the cutoff' do
+        assert_equal :rejected, @status
+      end
+
+      it 'refuses to execute a rejected proposal' do
+        assert_raises(Solace::Errors::RPCError) do
+          program.execute_transaction(
+            payer:             creator,
+            settings:          @identity.settings_address,
+            signer:            creator,
+            transaction_index: 1
+          )
+        end
+      end
+    end
+
+    describe '#execute_transaction' do
+      describe 'when the signer pays for the transaction' do
+        before(:all) do
+          @identity  = lifecycle_account
+          @recipient = Solace::Keypair.generate
+          store_transfer(identity: @identity, recipient: @recipient)
+          open_proposal(identity: @identity)
+
+          approve_tx = program.approve_proposal(
+            payer:             creator,
+            settings:          @identity.settings_address,
+            signer:            creator,
+            transaction_index: 1
+          )
+          connection.wait_for_confirmed_signature { approve_tx.signature }
+
+          @tx = program.execute_transaction(
+            payer:             creator,
+            settings:          @identity.settings_address,
+            signer:            creator,
+            transaction_index: 1
+          )
+          connection.wait_for_confirmed_signature { @tx.signature }
+
+          @status = proposal_status(identity: @identity)
+        end
+
+        it 'returns the signed transaction' do
+          assert_kind_of Solace::Transaction, @tx
+        end
+
+        it 'transfers the amount out of the vault to the recipient' do
+          assert_equal transfer_amount, connection.get_balance(@recipient.address)
+          assert_equal vault_funding - transfer_amount,
+                       connection.get_balance(@identity.smart_account_address)
+        end
+
+        it 'marks the proposal executed' do
+          assert_equal :executed, @status
+        end
+      end
+
+      describe 'when a separate sponsor pays for the transaction' do
+        before(:all) do
+          @identity  = lifecycle_account
+          @recipient = Solace::Keypair.generate
+          store_transfer(identity: @identity, recipient: @recipient)
+          open_proposal(identity: @identity)
+
+          approve_tx = program.approve_proposal(
+            payer:             creator,
+            settings:          @identity.settings_address,
+            signer:            creator,
+            transaction_index: 1
+          )
+          connection.wait_for_confirmed_signature { approve_tx.signature }
+
+          @payer_starting_balance   = connection.get_balance(payer.address)
+          @creator_starting_balance = connection.get_balance(creator.address)
+
+          # The sponsor pays the fee; the creator only signs for Execute consensus.
+          @tx = program.execute_transaction(
+            payer:,
+            settings:          @identity.settings_address,
+            signer:            creator,
+            transaction_index: 1
+          )
+          connection.wait_for_confirmed_signature { @tx.signature }
+
+          @payer_ending_balance   = connection.get_balance(payer.address)
+          @creator_ending_balance = connection.get_balance(creator.address)
+        end
+
+        it 'transfers the amount out of the vault to the recipient' do
+          assert_equal transfer_amount, connection.get_balance(@recipient.address)
+          assert_equal vault_funding - transfer_amount,
+                       connection.get_balance(@identity.smart_account_address)
+        end
+
+        it 'deducts only the transaction fee from the sponsor' do
+          # 2 signatures (payer + creator) at 5000 lamports per signature
+          assert_equal @payer_starting_balance - (2 * 5000), @payer_ending_balance
+        end
+
+        it 'deducts nothing from the executing signer' do
+          assert_equal @creator_starting_balance, @creator_ending_balance
+        end
+      end
+    end
+  end
 end
