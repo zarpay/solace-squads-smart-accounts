@@ -1529,6 +1529,76 @@ module Solace
           .add_instruction(execute_transaction_ix)
       end
 
+      # Closes a vault transaction and its proposal, refunding their rent, signs
+      # it, and (optionally) sends it. Closeable once the proposal is terminal
+      # (Executed/Rejected/Cancelled) or stale and not Approved. Only the fee
+      # payer signs.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_close_transaction}.
+      # @return [Transaction] The created or sent transaction.
+      def close_transaction(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_close_transaction(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer)
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a close-transaction transaction. The Proposal and vault
+      # Transaction PDAs are derived here; the rent collectors default to the
+      # on-chain stored values (the proposal's and transaction's collectors) when
+      # not supplied.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param transaction_index [Integer] Index of the vault transaction to close.
+      # @param proposal_rent_collector [#to_s] (Optional) Receives the proposal rent
+      #   (defaults to the proposal's stored rent collector).
+      # @param transaction_rent_collector [#to_s] (Optional) Receives the transaction rent
+      #   (defaults to the transaction's stored rent collector).
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_close_transaction(
+        settings:,
+        transaction_index:,
+        proposal_rent_collector: nil,
+        transaction_rent_collector: nil
+      )
+        transaction, = get_transaction_address(settings_address: settings.to_s, transaction_index:)
+        proposal,    = get_proposal_address(settings_address: settings.to_s, transaction_index:)
+
+        proposal_rent_collector    ||= get_proposal(proposal_address: proposal).rent_collector
+        transaction_rent_collector ||= get_transaction(transaction_address: transaction).rent_collector
+
+        close_transaction_ix = Composers::SquadsSmartAccountsCloseTransactionComposer.new(
+          settings:,
+          proposal:,
+          transaction:,
+          proposal_rent_collector:,
+          transaction_rent_collector:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(close_transaction_ix)
+      end
+
       # Creates a settings transaction (a stored batch of SettingsActions) on an
       # autonomous smart account, signs it, and (optionally) sends it. The
       # transaction is stored, not applied — it awaits a proposal and approvals.

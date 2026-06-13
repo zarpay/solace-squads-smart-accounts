@@ -72,7 +72,7 @@ to pre-exist. The bootstrap creates `spl-mint` and `token-2022-mint` fixtures
 
 ## Account Cleanup
 
-- [ ] `closeTransaction` — Close a transaction and its proposal
+- [x] `closeTransaction` — Close a transaction and its proposal (+ program method `close_transaction`; no consensus signer; rent collectors default to the on-chain stored values; an Approved-but-unexecuted vault proposal cannot be closed — it can still execute)
 
 ## Program Config (admin — likely out of scope)
 

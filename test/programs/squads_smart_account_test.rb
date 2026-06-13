@@ -2058,6 +2058,86 @@ describe Solace::Programs::SquadsSmartAccount do
         end
       end
     end
+
+    describe '#close_transaction' do
+      # Advances a fresh account's index-1 vault transaction to an Approved
+      # proposal (creator pays and votes) and returns the identity.
+      def approved_vault_transaction
+        identity   = lifecycle_account
+        @recipient = Solace::Keypair.generate
+        store_transfer(identity:, recipient: @recipient)
+        open_proposal(identity:)
+
+        approve_tx = program.approve_proposal(
+          payer:             creator,
+          settings:          identity.settings_address,
+          signer:            creator,
+          transaction_index: 1
+        )
+        connection.wait_for_confirmed_signature { approve_tx.signature }
+
+        identity
+      end
+
+      describe 'closing an executed transaction' do
+        before(:all) do
+          @identity = approved_vault_transaction
+
+          execute_tx = program.execute_transaction(
+            payer:             creator,
+            settings:          @identity.settings_address,
+            signer:            creator,
+            transaction_index: 1
+          )
+          connection.wait_for_confirmed_signature { execute_tx.signature }
+
+          @proposal_address,    = program.get_proposal_address(
+            settings_address:  @identity.settings_address,
+            transaction_index: 1
+          )
+          @transaction_address, = program.get_transaction_address(
+            settings_address:  @identity.settings_address,
+            transaction_index: 1
+          )
+
+          # Rent collectors default to the on-chain stored collectors (the creator).
+          @tx = program.close_transaction(
+            payer:             creator,
+            settings:          @identity.settings_address,
+            transaction_index: 1
+          )
+          connection.wait_for_confirmed_signature { @tx.signature }
+        end
+
+        it 'returns the signed transaction' do
+          assert_kind_of Solace::Transaction, @tx
+        end
+
+        it 'closes the vault transaction account' do
+          assert_nil connection.get_account_info(@transaction_address)
+        end
+
+        it 'closes the proposal account' do
+          assert_nil connection.get_account_info(@proposal_address)
+        end
+      end
+
+      describe 'when the proposal is Approved but not executed' do
+        before(:all) do
+          @identity = approved_vault_transaction
+        end
+
+        it 'refuses to close (the transaction can still execute)' do
+          assert_raises(Solace::Errors::RPCError) do
+            program.close_transaction(
+              payer:             creator,
+              settings:          @identity.settings_address,
+              transaction_index: 1
+            )
+          end
+        end
+      end
+    end
   end
 
   # The settings-transaction async lifecycle: createSettingsTransaction →
