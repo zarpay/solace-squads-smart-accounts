@@ -131,4 +131,144 @@ describe Solace::Composers::SquadsSmartAccountsUseSpendingLimitComposer do
       assert_kind_of Solace::Errors::RPCError, error
     end
   end
+
+  # Performs a token spending-limit spend through the composer and assigns the
+  # captured state to instance variables (limit_amount, transfer_amount,
+  # minted_amount, and the starting/ending balances) for the scenarios below.
+  #
+  # @param token_program [Solace::Programs::SplToken, Solace::Programs::Token2022] The token client.
+  # @param mint_fixture [String] The mint fixture name.
+  # @param token_program_id [String] The program owning the mint.
+  # @return [void]
+  def perform_token_spend(token_program:, mint_fixture:, token_program_id:)
+    mint           = fixtures.load_keypair(mint_fixture)
+    mint_authority = fixtures.load_keypair('mint-authority')
+
+    @minted_amount   = 1_000_000
+    @limit_amount    = 500_000
+    @transfer_amount = 200_000
+
+    identity = create_smart_account(
+      program,
+      payer:              creator,
+      creator:,
+      threshold:          1,
+      settings_authority: creator.address,
+      signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+    )
+
+    # Grant a token-denominated spending limit (mint != default).
+    spending_limit_address = grant_spending_limit(
+      program,
+      identity:,
+      authority: creator,
+      delegate:  creator.address,
+      amount:    @limit_amount,
+      period:    period::DAY,
+      mint:      mint.address
+    )
+
+    # Fund the vault's ATA with tokens; create the destination owner's ATA.
+    vault_ata = create_ata(
+      connection,
+      payer:            creator,
+      owner:            identity.smart_account_address,
+      mint:             mint.address,
+      token_program_id:
+    )
+
+    mint_tokens(
+      token_program,
+      payer:       creator,
+      mint:        mint.address,
+      destination: vault_ata,
+      amount:      @minted_amount,
+      authority:   mint_authority
+    )
+
+    recipient = Solace::Keypair.generate
+    destination_ata = create_ata(
+      connection,
+      payer:            creator,
+      owner:            recipient.address,
+      mint:             mint.address,
+      token_program_id:
+    )
+
+    @recipient_starting_balance = connection.get_token_account_balance(destination_ata)['amount'].to_i
+    @vault_starting_balance     = connection.get_token_account_balance(vault_ata)['amount'].to_i
+    @starting_remaining_amount  = program.get_spending_limit(spending_limit_address:).remaining_amount
+
+    composer = Solace::Composers::SquadsSmartAccountsUseSpendingLimitComposer.new(
+      settings:                    identity.settings_address,
+      signer:                      creator.address,
+      spending_limit:              spending_limit_address,
+      smart_account:               identity.smart_account_address,
+      destination:                 recipient.address,
+      amount:                      @transfer_amount,
+      decimals:                    6,
+      mint:                        mint.address,
+      token_program:               token_program_id,
+      smart_account_token_account: vault_ata,
+      destination_token_account:   destination_ata
+    )
+
+    tx = Solace::TransactionComposer.new(connection:)
+                                    .add_instruction(composer)
+                                    .set_fee_payer(creator)
+                                    .compose_transaction
+
+    tx.sign(creator)
+
+    signature = connection.send_transaction(tx.serialize)
+    connection.wait_for_confirmed_signature { signature['result'] }
+
+    @recipient_ending_balance = connection.get_token_account_balance(destination_ata)['amount'].to_i
+    @vault_ending_balance     = connection.get_token_account_balance(vault_ata)['amount'].to_i
+    @ending_remaining_amount  = program.get_spending_limit(spending_limit_address:).remaining_amount
+  end
+
+  describe 'spending an SPL Token limit' do
+    before(:all) do
+      perform_token_spend(
+        token_program:    Solace::Programs::SplToken.new(connection:),
+        mint_fixture:     'spl-mint',
+        token_program_id: Solace::Constants::TOKEN_PROGRAM_ID
+      )
+    end
+
+    it 'credits the transfer amount to the destination' do
+      assert_equal @recipient_starting_balance + @transfer_amount, @recipient_ending_balance
+    end
+
+    it 'debits the transfer amount from the vault' do
+      assert_equal @vault_starting_balance - @transfer_amount, @vault_ending_balance
+    end
+
+    it 'decrements the remaining allowance by the transfer amount' do
+      assert_equal @starting_remaining_amount - @transfer_amount, @ending_remaining_amount
+    end
+  end
+
+  describe 'spending a Token-2022 limit' do
+    before(:all) do
+      perform_token_spend(
+        token_program:    Solace::Programs::Token2022.new(connection:),
+        mint_fixture:     'token-2022-mint',
+        token_program_id: Solace::Constants::TOKEN_2022_PROGRAM_ID
+      )
+    end
+
+    it 'credits the transfer amount to the destination' do
+      assert_equal @recipient_starting_balance + @transfer_amount, @recipient_ending_balance
+    end
+
+    it 'debits the transfer amount from the vault' do
+      assert_equal @vault_starting_balance - @transfer_amount, @vault_ending_balance
+    end
+
+    it 'decrements the remaining allowance by the transfer amount' do
+      assert_equal @starting_remaining_amount - @transfer_amount, @ending_remaining_amount
+    end
+  end
 end

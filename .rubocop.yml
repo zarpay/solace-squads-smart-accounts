@@ -22,6 +22,8 @@ Metrics/ParameterLists:
 
 Metrics/MethodLength:
   Max: 25
+  Exclude:
+    - 'test/**/*_test.rb'
 
 # Composers enumerate one account declaration and one index resolution per
 # on-chain account, plus one kwarg per IDL arg field; the default of 17 flags
@@ -29,6 +31,8 @@ Metrics/MethodLength:
 # (addSpendingLimit: 9 args + 6 accounts) while still catching real branching.
 Metrics/AbcSize:
   Max: 25
+  Exclude:
+    - 'test/**/*_test.rb'
 
 # Program classes grow by one send-and-sign + compose method pair per IDL
 # instruction; length reflects program surface area, not complexity.

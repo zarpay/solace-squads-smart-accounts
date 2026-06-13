@@ -42,20 +42,18 @@ method on `Solace::Programs::SquadsSmartAccount`.
 
 ## Spending Limits
 
-SOL limits fully supported across both account modes: controlled accounts manage
-limits via the *AsAuthority instructions; autonomous accounts via
-AddSpendingLimit/RemoveSpendingLimit SettingsActions through
-`executeSettingsTransactionSync`.
-
-**NEXT UP (before any new instructions):** SPL and Token-2022 mint support for
-spending limits — parameterize useSpendingLimit's four SPL-only optional
-accounts (mint, both token accounts, token program), which currently carry the
-program ID (Anchor's absent-optional convention). Tests will create mints/ATAs
-via solace's SplToken and Token2022 programs.
+Fully supported for SOL, SPL Token, and Token-2022 across both account modes:
+controlled accounts manage limits via the *AsAuthority instructions; autonomous
+accounts via AddSpendingLimit/RemoveSpendingLimit SettingsActions through
+`executeSettingsTransactionSync`. `useSpendingLimit` handles SOL (system transfer)
+and token mints (transfer_checked via the token interface) — token spends derive
+the vault/destination ATAs in the program layer and require the destination ATA
+to pre-exist. The bootstrap creates `spl-mint` and `token-2022-mint` fixtures
+(authority `mint-authority`) for token tests.
 
 - [x] `addSpendingLimitAsAuthority` — Create a spending limit (+ program method `add_spending_limit_as_authority`)
 - [x] `removeSpendingLimitAsAuthority` — Remove a spending limit (+ program method `remove_spending_limit_as_authority`)
-- [x] `useSpendingLimit` — Transfer tokens from a vault via a spending limit (+ program method `use_spending_limit`; SOL only)
+- [x] `useSpendingLimit` — Transfer from a vault via a spending limit (+ program method `use_spending_limit`; SOL, SPL Token, and Token-2022)
 
 ## Transaction Buffers (large transactions)
 

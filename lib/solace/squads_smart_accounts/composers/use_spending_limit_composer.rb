@@ -4,25 +4,33 @@ module Solace
   module Composers
     # Composes a `useSpendingLimit` instruction for the Squads Smart Account program.
     #
-    # Transfers SOL from a vault to a destination within a pre-authorized
-    # spending limit — single signature from an allowed signer, no consensus.
+    # Transfers from a vault to a destination within a pre-authorized spending
+    # limit — single signature from an allowed signer, no consensus. Supports
+    # both SOL limits and SPL Token / Token-2022 limits.
     #
-    # NOTE: SOL limits only for now. The four SPL-only optional accounts (mint,
-    # both token accounts, token program) are filled with the Squads program ID,
-    # which is Anchor's convention for an absent optional account. SPL support
-    # will parameterize those four slots.
+    # For SOL limits (no :mint), the four SPL-only optional accounts (mint, both
+    # token accounts, token program) are filled with the Squads program ID,
+    # Anchor's convention for an absent optional account. For token limits, those
+    # four slots carry the real accounts; the program transfers via
+    # `transfer_checked`, so :decimals must match the mint.
     #
     # Required params:
     #   :settings       [#to_s]          Base58 address of the settings account.
     #   :signer         [#to_s, Keypair] An allowed signer of the spending limit (must sign).
     #   :spending_limit [#to_s]          The SpendingLimit PDA to spend against.
     #   :smart_account  [#to_s]          The vault to transfer from.
-    #   :destination    [#to_s]          The destination account.
-    #   :amount         [Integer]        Lamports to transfer.
+    #   :destination    [#to_s]          The destination owner (receives SOL, or owns the destination ATA).
+    #   :amount         [Integer]        Amount to transfer (mint decimals).
     #
-    # Optional params:
+    # Optional params (SOL):
     #   :decimals [Integer] Mint decimals, 9 for SOL (default: 9).
     #   :memo     [String]  Indexing memo (default: nil).
+    #
+    # Optional params (token limits — all four required together):
+    #   :mint                        [#to_s] The token mint (omit for SOL).
+    #   :token_program               [#to_s] The program owning the mint.
+    #   :smart_account_token_account [#to_s] The vault's ATA for the mint.
+    #   :destination_token_account   [#to_s] The destination owner's ATA (must already exist).
     class SquadsSmartAccountsUseSpendingLimitComposer < Base
       # Extracts the settings address from the params
       #
@@ -80,6 +88,42 @@ module Solace
         params[:memo]
       end
 
+      # Extracts the token mint from the params
+      #
+      # @return [String, nil] The mint address, or nil for a SOL limit
+      def mint
+        params[:mint]&.to_s
+      end
+
+      # Extracts the token program from the params
+      #
+      # @return [String, nil] The token program address (token limits only)
+      def token_program
+        params[:token_program]&.to_s
+      end
+
+      # Extracts the vault's token account from the params
+      #
+      # @return [String, nil] The vault ATA address (token limits only)
+      def smart_account_token_account
+        params[:smart_account_token_account]&.to_s
+      end
+
+      # Extracts the destination's token account from the params
+      #
+      # @return [String, nil] The destination ATA address (token limits only)
+      def destination_token_account
+        params[:destination_token_account]&.to_s
+      end
+
+      # Whether this is a SOL spending limit. True when no mint is given or the
+      # mint is the default pubkey — the same marker the program uses for SOL.
+      #
+      # @return [Boolean]
+      def sol?
+        mint.nil? || mint.to_s == SquadsSmartAccounts::DEFAULT_PUBKEY
+      end
+
       # Returns the Squads Smart Account program id from the constants
       #
       # @return [String] The Squads Smart Account program id
@@ -96,8 +140,11 @@ module Solace
 
       # Declares all accounts required by this instruction.
       #
-      # The four SPL-only optional slots resolve to the Squads program account
-      # (already declared readonly), so no extra declarations are needed for them.
+      # For SOL limits the four SPL-only optional slots resolve to the Squads
+      # program account (already declared readonly), so no extra declarations
+      # are needed. For token limits the real token accounts are declared.
+      #
+      # rubocop:disable Metrics/AbcSize -- straight enumeration of up to 11 accounts
       def setup_accounts
         account_context.add_readonly_nonsigner(settings)
         account_context.add_readonly_signer(signer)
@@ -106,17 +153,32 @@ module Solace
         account_context.add_writable_nonsigner(destination)
         account_context.add_readonly_nonsigner(system_program)
         account_context.add_readonly_nonsigner(program_id)
+
+        return if sol?
+
+        account_context.add_readonly_nonsigner(mint)
+        account_context.add_writable_nonsigner(smart_account_token_account)
+        account_context.add_writable_nonsigner(destination_token_account)
+        account_context.add_readonly_nonsigner(token_program)
       end
+      # rubocop:enable Metrics/AbcSize
 
       # Builds the instruction with resolved account indices.
       #
-      # The SPL-only optional slots (mint, token accounts, token program) carry
-      # the program account's index — Anchor's absent-optional convention.
+      # For SOL limits the SPL-only optional slots (mint, token accounts, token
+      # program) carry the program account's index — Anchor's absent-optional
+      # convention. For token limits they carry the real account indices.
       #
       # @param context [Solace::Utils::AccountContext] Merged context from TransactionComposer.
       # @return [Solace::Instruction]
+      #
+      # rubocop:disable Metrics/AbcSize -- straight index resolution of up to 11 accounts
       def build_instruction(context)
-        absent = context.index_of(program_id)
+        program_index = context.index_of(program_id)
+
+        # Anchor signals an absent optional account by passing the program's own
+        # account in that slot; for SOL limits all four token slots are absent.
+        absent = program_index
 
         SquadsSmartAccounts::Instructions::UseSpendingLimitInstruction.build(
           amount:,
@@ -128,13 +190,14 @@ module Solace
           smart_account_index:               context.index_of(smart_account),
           destination_index:                 context.index_of(destination),
           system_program_index:              context.index_of(system_program),
-          mint_index:                        absent,
-          smart_account_token_account_index: absent,
-          destination_token_account_index:   absent,
-          token_program_index:               absent,
-          program_index:                     absent
+          mint_index:                        sol? ? absent : context.index_of(mint),
+          smart_account_token_account_index: sol? ? absent : context.index_of(smart_account_token_account),
+          destination_token_account_index:   sol? ? absent : context.index_of(destination_token_account),
+          token_program_index:               sol? ? absent : context.index_of(token_program),
+          program_index:
         )
       end
+      # rubocop:enable Metrics/AbcSize
     end
   end
 end

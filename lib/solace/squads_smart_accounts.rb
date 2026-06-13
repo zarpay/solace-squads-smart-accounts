@@ -5,15 +5,19 @@ require 'solace/squads_smart_accounts/version'
 require 'solace/squads_smart_accounts/constants'
 require 'solace/squads_smart_accounts/codecs_extensions'
 
+def req_glob(path)
+  Dir[File.join(__dir__, path)].each { |f| require f }
+end
+
 # Load types
-Dir[File.join(__dir__, 'squads_smart_accounts/types/*.rb')].each { |f| require f }
+req_glob('squads_smart_accounts/types/*.rb')
 
 # Load instructions and composers
-Dir[File.join(__dir__, 'squads_smart_accounts/instructions/*.rb')].each { |f| require f }
-Dir[File.join(__dir__, 'squads_smart_accounts/composers/*.rb')].each { |f| require f }
+req_glob('squads_smart_accounts/instructions/*.rb')
+req_glob('squads_smart_accounts/composers/*.rb')
 
 # Load programs
-Dir[File.join(__dir__, 'squads_smart_accounts/programs/*.rb')].each { |f| require f }
+req_glob('squads_smart_accounts/programs/*.rb')
 
 module Solace
   module SquadsSmartAccounts

@@ -34,10 +34,18 @@ module Helpers
   # @param identity [Solace::SquadsSmartAccounts::SmartAccountIdentity] The smart account.
   # @param authority [Solace::Keypair] The settings authority (also pays).
   # @param delegate [#to_s] The key allowed to use the limit.
-  # @param amount [Integer] Lamports spendable per period.
+  # @param amount [Integer] Amount spendable per period (mint decimals).
   # @param period [Integer] Period enum value.
+  # @param mint [#to_s] The token mint (defaults to DEFAULT_PUBKEY = SOL).
   # @return [String] The spending limit PDA address.
-  def grant_spending_limit(program, identity:, authority:, delegate:, amount:, period:)
+  def grant_spending_limit(
+    program,
+    identity:,
+    authority:,
+    delegate:,
+    amount:, period:,
+    mint: Solace::SquadsSmartAccounts::DEFAULT_PUBKEY
+  )
     seed = Solace::Keypair.generate
 
     spending_limit_address, = program.get_spending_limit_address(
@@ -54,6 +62,7 @@ module Helpers
       seed:,
       amount:,
       period:,
+      mint:,
       signers:            [delegate.to_s]
     )
     program.connection.wait_for_confirmed_signature { tx.signature }
@@ -70,6 +79,44 @@ module Helpers
   def fund_account(connection, address, lamports)
     signature = connection.request_airdrop(address.to_s, lamports)
     connection.wait_for_confirmed_signature { signature['result'] }
+  end
+
+  # Derives an owner's associated token account, creating it on-chain if absent.
+  #
+  # @param connection [Solace::Connection] An active RPC connection.
+  # @param payer [Solace::Keypair] Pays fees and rent for the ATA.
+  # @param owner [#to_s] The ATA owner (may be an off-curve PDA like a vault).
+  # @param mint [#to_s] The token mint.
+  # @param token_program_id [String] The program owning the mint.
+  # @return [String] The associated token account address.
+  def create_ata(connection, payer:, owner:, mint:, token_program_id:)
+    Solace::Programs::AssociatedTokenAccount.new(connection:).get_or_create_address(
+      payer:,
+      funder:           payer,
+      owner:            owner.to_s,
+      mint:             mint.to_s,
+      token_program_id:
+    )
+  end
+
+  # Mints tokens to a destination token account and waits for confirmation.
+  #
+  # @param token_program [Solace::Programs::SplToken, Solace::Programs::Token2022] The token client.
+  # @param payer [Solace::Keypair] Pays the transaction fee.
+  # @param mint [#to_s] The token mint.
+  # @param destination [#to_s] The destination token account (ATA).
+  # @param amount [Integer] The amount to mint (mint decimals).
+  # @param authority [Solace::Keypair] The mint authority (signs).
+  # @return [void]
+  def mint_tokens(token_program, payer:, mint:, destination:, amount:, authority:)
+    tx = token_program.mint_to(
+      payer:,
+      mint:           mint.to_s,
+      destination:    destination.to_s,
+      amount:,
+      mint_authority: authority
+    )
+    token_program.connection.wait_for_confirmed_signature { tx.signature }
   end
 end
 

@@ -13,6 +13,9 @@ describe Solace::Programs::SquadsSmartAccount do
   let(:program) { klass.new(connection:) }
   let(:creator) { fixtures.load_keypair('creator') }
 
+  # Fixtures
+  let(:payer) { fixtures.load_keypair('payer') }
+
   describe '#initialize' do
     it 'assigns connection' do
       assert_equal connection, program.connection
@@ -160,8 +163,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         @identity = program.next_smart_account
         @creation_fee = program.get_program_config.smart_account_creation_fee
@@ -266,8 +267,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         # Create a 1-of-1 smart account and fund its default vault.
         @identity = create_smart_account(
@@ -397,8 +396,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         @identity = create_smart_account(
           program,
@@ -455,8 +452,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when the authority is not a member of the signer set' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         # The authority is a fresh, unfunded keypair: it only signs — the
         # sponsor pays all fees and rent. It appears nowhere in the signer set.
@@ -576,8 +571,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         @removed_signer_key = Solace::Keypair.generate
 
@@ -661,8 +654,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         second_signer = Solace::Keypair.generate
 
@@ -705,8 +696,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when the rent payer is distinct from the payer and authority' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         second_signer = Solace::Keypair.generate
 
@@ -828,8 +817,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         @identity = create_smart_account(
           program,
@@ -904,8 +891,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         @identity = create_smart_account(
           program,
@@ -1032,8 +1017,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         @identity = create_smart_account(
           program,
@@ -1071,8 +1054,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when multiple co-signers meet the threshold' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         # A 2-of-2 account: both signers must co-sign any settings change.
         @identity = create_smart_account(
@@ -1311,8 +1292,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         @identity = create_smart_account(
           program,
@@ -1397,8 +1376,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when the delegate pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         # The payer fixture acts as a funded, non-member delegate.
         @settings_address, @vault_address, @spending_limit_address = grant_funded_spending_limit(payer)
@@ -1430,8 +1407,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         # A fresh, unfunded keypair as the delegate: it only signs — the
         # sponsor pays the fee, proving fully gasless delegated spending.
@@ -1459,6 +1434,98 @@ describe Solace::Programs::SquadsSmartAccount do
 
       it 'lets an unfunded delegate spend without holding any SOL' do
         assert_equal 0, connection.get_balance(@delegate.address)
+      end
+    end
+
+    describe 'spending an SPL Token limit' do
+      let(:spl_token) { Solace::Programs::SplToken.new(connection:) }
+      let(:mint) { fixtures.load_keypair('spl-mint') }
+      let(:mint_authority) { fixtures.load_keypair('mint-authority') }
+
+      before(:all) do
+        @minted_amount   = 1_000_000
+        @limit_amount    = 500_000
+        @transfer_amount = 150_000
+
+        # Controlled account; creator authority, payer is a non-member delegate.
+        identity = create_smart_account(
+          program,
+          payer:              creator,
+          creator:,
+          threshold:          1,
+          settings_authority: creator.address,
+          signers:            [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+        )
+
+        @spending_limit_address = grant_spending_limit(
+          program,
+          identity:,
+          authority: creator,
+          delegate:  payer.address,
+          amount:    @limit_amount,
+          period:    period::DAY,
+          mint:      mint.address
+        )
+
+        # Fund the vault's ATA; create the destination owner's ATA.
+        vault_ata = create_ata(
+          connection,
+          payer:            creator,
+          owner:            identity.smart_account_address,
+          mint:             mint.address,
+          token_program_id: Solace::Constants::TOKEN_PROGRAM_ID
+        )
+
+        mint_tokens(
+          spl_token,
+          payer:       creator,
+          mint:        mint.address,
+          destination: vault_ata,
+          amount:      @minted_amount,
+          authority:   mint_authority
+        )
+
+        @recipient = Solace::Keypair.generate
+        @destination_ata = create_ata(
+          connection,
+          payer:            creator,
+          owner:            @recipient.address,
+          mint:             mint.address,
+          token_program_id: Solace::Constants::TOKEN_PROGRAM_ID
+        )
+
+        @recipient_starting_balance = connection.get_token_account_balance(@destination_ata)['amount'].to_i
+
+        # The non-member delegate (payer) both pays the fee and authorizes the spend.
+        @tx = program.use_spending_limit(
+          payer:,
+          settings:       identity.settings_address,
+          signer:         payer,
+          spending_limit: @spending_limit_address,
+          smart_account:  identity.smart_account_address,
+          destination:    @recipient.address,
+          amount:         @transfer_amount,
+          decimals:       6,
+          mint:           mint.address,
+          token_program:  Solace::Constants::TOKEN_PROGRAM_ID
+        )
+
+        connection.wait_for_confirmed_signature { @tx.signature }
+
+        @recipient_ending_balance = connection.get_token_account_balance(@destination_ata)['amount'].to_i
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'credits the transfer amount to the destination ATA' do
+        assert_equal @recipient_starting_balance + @transfer_amount, @recipient_ending_balance
+      end
+
+      it 'decrements the remaining allowance by the transfer amount' do
+        spending_limit = program.get_spending_limit(spending_limit_address: @spending_limit_address)
+        assert_equal @limit_amount - @transfer_amount, spending_limit.remaining_amount
       end
     end
   end
@@ -1515,8 +1582,6 @@ describe Solace::Programs::SquadsSmartAccount do
     end
 
     describe 'when a separate sponsor pays for the transaction' do
-      let(:payer) { fixtures.load_keypair('payer') }
-
       before(:all) do
         @settings_address, @spending_limit_address = grant_removable_spending_limit
 

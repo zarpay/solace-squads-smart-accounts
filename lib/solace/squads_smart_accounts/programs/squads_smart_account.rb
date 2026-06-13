@@ -842,15 +842,23 @@ module Solace
         tx
       end
 
-      # Prepares a use-spending-limit transaction (SOL limits only for now).
+      # Prepares a use-spending-limit transaction.
+      #
+      # For SOL limits, omit :mint. For SPL Token / Token-2022 limits, pass
+      # :mint and :token_program; the vault and destination ATAs are derived
+      # here from those plus :smart_account and :destination (the owners). The
+      # destination ATA must already exist on-chain — this method does not
+      # create it. Pass :decimals matching the mint (9 for SOL).
       #
       # @param settings [#to_s] Base58 address of the settings account.
       # @param signer [#to_s, Keypair] An allowed signer of the spending limit.
       # @param spending_limit [#to_s] The SpendingLimit PDA to spend against.
       # @param smart_account [#to_s] The vault to transfer from.
-      # @param destination [#to_s] The destination account.
-      # @param amount [Integer] Lamports to transfer.
+      # @param destination [#to_s] The destination owner (receives SOL, or owns the destination ATA).
+      # @param amount [Integer] Amount to transfer (mint decimals).
       # @param decimals [Integer] (Optional) Mint decimals, 9 for SOL (default: 9).
+      # @param mint [#to_s] (Optional) Token mint; omit for SOL limits.
+      # @param token_program [#to_s] (Optional) Program owning the mint; required with :mint.
       # @param memo [String] (Optional) Indexing memo.
       # @return [TransactionComposer] A composer with required instructions.
       def compose_use_spending_limit(
@@ -861,6 +869,8 @@ module Solace
         destination:,
         amount:,
         decimals: 9,
+        mint: nil,
+        token_program: nil,
         memo: nil
       )
         use_spending_limit_ix = Composers::SquadsSmartAccountsUseSpendingLimitComposer.new(
@@ -871,7 +881,16 @@ module Solace
           destination:,
           amount:,
           decimals:,
-          memo:
+          mint:,
+          token_program:,
+          memo:,
+          # Additional options are required when the non SOL tokens are being spent
+          **token_account_options(
+            smart_account:,
+            destination:,
+            mint:,
+            token_program:
+          )
         )
 
         TransactionComposer
@@ -937,6 +956,32 @@ module Solace
         TransactionComposer
           .new(connection:)
           .add_instruction(remove_spending_limit_ix)
+      end
+
+      private
+
+      # Derives the vault and destination ATAs for a token spending-limit spend.
+      #
+      # @param smart_account [#to_s] The vault PDA (owner of the source ATA).
+      # @param destination [#to_s] The destination owner (owner of the destination ATA).
+      # @param mint [#to_s] The token mint.
+      # @param token_program [#to_s] The program owning the mint.
+      # @return [Hash] :smart_account_token_account and :destination_token_account addresses.
+      def token_account_options(smart_account:, destination:, mint:, token_program:)
+        return {} if mint.nil? || mint.to_s == Solace::SquadsSmartAccounts::DEFAULT_PUBKEY
+
+        {
+          smart_account_token_account: Solace::Programs::AssociatedTokenAccount.get_address(
+            owner:            smart_account.to_s,
+            mint:             mint.to_s,
+            token_program_id: token_program.to_s
+          ).first,
+          destination_token_account:   Solace::Programs::AssociatedTokenAccount.get_address(
+            owner:            destination.to_s,
+            mint:             mint.to_s,
+            token_program_id: token_program.to_s
+          ).first
+        }
       end
     end
   end
