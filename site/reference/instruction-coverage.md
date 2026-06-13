@@ -4,6 +4,65 @@ title: Instruction Coverage
 
 # Instruction Coverage
 
-::: info Documentation in progress
-This page is part of the docs scaffold — content is coming soon.
-:::
+The Squads Smart Account program exposes 37 instructions. This library implements the
+**22** needed for normal smart-account usage. `✅` = implemented (with a builder,
+composer, program method, and integration tests); `🚫` = deliberately skipped;
+`⬜` = not yet implemented.
+
+## Core transaction lifecycle
+
+| Instruction | Status | Docs |
+| --- | --- | --- |
+| `createSmartAccount` | ✅ | [Create a Smart Account](/operations/create-smart-account) |
+| `createTransaction` | ✅ | [Create a Transaction](/operations/vault/create-transaction) |
+| `createProposal` | ✅ | [Create a Proposal](/operations/vault/create-proposal) |
+| `activateProposal` | ✅ | [Activate a Proposal](/operations/vault/activate-proposal) |
+| `approveProposal` | ✅ | [Approve a Proposal](/operations/vault/approve-proposal) |
+| `rejectProposal` | ✅ | [Reject a Proposal](/operations/vault/reject-proposal) |
+| `cancelProposal` | ✅ | [Cancel a Proposal](/operations/vault/cancel-proposal) |
+| `executeTransaction` | ✅ | [Execute a Transaction](/operations/vault/execute-transaction) |
+| `closeTransaction` | ✅ | [Close a Transaction](/operations/vault/close-transaction) |
+| `executeTransactionSync` | ✅ | [Execute Synchronously](/operations/execute-transaction-sync) |
+
+## Settings transactions
+
+| Instruction | Status | Docs |
+| --- | --- | --- |
+| `createSettingsTransaction` | ✅ | [Create a Settings Transaction](/operations/settings/create) |
+| `executeSettingsTransaction` | ✅ | [Execute a Settings Transaction](/operations/settings/execute) |
+| `closeSettingsTransaction` | ✅ | [Close a Settings Transaction](/operations/settings/close) |
+| `executeSettingsTransactionSync` | ✅ | [Execute Synchronously](/operations/settings/execute-sync) |
+
+## Authority actions (controlled accounts)
+
+| Instruction | Status | Docs |
+| --- | --- | --- |
+| `addSignerAsAuthority` | ✅ | [Add a Signer](/operations/authority/add-signer) |
+| `removeSignerAsAuthority` | ✅ | [Remove a Signer](/operations/authority/remove-signer) |
+| `changeThresholdAsAuthority` | ✅ | [Change the Threshold](/operations/authority/change-threshold) |
+| `setTimeLockAsAuthority` | ✅ | [Set the Time Lock](/operations/authority/set-time-lock) |
+| `setNewSettingsAuthorityAsAuthority` | ✅ | [Set a New Settings Authority](/operations/authority/set-new-settings-authority) |
+| `setArchivalAuthorityAsAuthority` | 🚫 | Skipped — the archival feature is inert in the deployed program. |
+
+## Spending limits
+
+| Instruction | Status | Docs |
+| --- | --- | --- |
+| `addSpendingLimitAsAuthority` | ✅ | [Add a Spending Limit](/operations/spending-limits/add) |
+| `useSpendingLimit` | ✅ | [Use a Spending Limit](/operations/spending-limits/use) |
+| `removeSpendingLimitAsAuthority` | ✅ | [Remove a Spending Limit](/operations/spending-limits/remove) |
+
+## Not yet implemented
+
+| Area | Instructions |
+| --- | --- |
+| Transaction buffers | `createTransactionBuffer`, `extendTransactionBuffer`, `closeTransactionBuffer`, `createTransactionFromBuffer` |
+| Batches | `createBatch`, `addTransactionToBatch`, `executeBatchTransaction`, `closeBatchTransaction`, `closeBatch` |
+| Program config (admin) | `initializeProgramConfig`, `setProgramConfigAuthority`, `setProgramConfigSmartAccountCreationFee`, `setProgramConfigTreasury` |
+| Other | `logEvent` |
+
+## Known limitations
+
+- **Address Lookup Tables (ALTs)** are not supported — `createTransaction` /
+  `executeTransaction` handle simple compiled messages only.
+- **Ephemeral signers** are not supported (`ephemeral_signers` is fixed at 0).

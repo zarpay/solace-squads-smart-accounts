@@ -22,8 +22,8 @@ export default defineConfig({
       { text: 'Home', link: '/' },
       { text: 'Quick Start', link: '/getting-started/' },
       { text: 'Concepts', link: '/concepts/settings-vs-smart-account' },
-      { text: 'Guides', link: '/guides/create-a-smart-account' },
-      { text: 'Reference', link: '/reference/program-client' },
+      { text: 'Operations', link: '/operations/create-smart-account' },
+      { text: 'Reference', link: '/reference/pda-and-fetchers' },
     ],
     sidebar: [
       {
@@ -31,6 +31,7 @@ export default defineConfig({
         items: [
           { text: 'Overview', link: '/' },
           { text: 'Quick Start', link: '/getting-started/' },
+          { text: 'Conventions', link: '/conventions' },
         ],
       },
       {
@@ -43,18 +44,62 @@ export default defineConfig({
         ],
       },
       {
-        text: 'Guides',
+        text: 'Account',
         items: [
-          { text: 'Create a Smart Account', link: '/guides/create-a-smart-account' },
-          { text: 'Vault Transactions', link: '/guides/vault-transactions' },
-          { text: 'Settings Transactions', link: '/guides/settings-transactions' },
-          { text: 'Synchronous Execution', link: '/guides/synchronous-execution' },
+          { text: 'Create a Smart Account', link: '/operations/create-smart-account' },
+        ],
+      },
+      {
+        text: 'Authority Actions',
+        items: [
+          { text: 'Add a Signer', link: '/operations/authority/add-signer' },
+          { text: 'Remove a Signer', link: '/operations/authority/remove-signer' },
+          { text: 'Change the Threshold', link: '/operations/authority/change-threshold' },
+          { text: 'Set the Time Lock', link: '/operations/authority/set-time-lock' },
+          { text: 'Set a New Settings Authority', link: '/operations/authority/set-new-settings-authority' },
+        ],
+      },
+      {
+        text: 'Spending Limits',
+        items: [
+          { text: 'Add a Spending Limit', link: '/operations/spending-limits/add' },
+          { text: 'Use a Spending Limit', link: '/operations/spending-limits/use' },
+          { text: 'Remove a Spending Limit', link: '/operations/spending-limits/remove' },
+        ],
+      },
+      {
+        text: 'Vault Transactions',
+        items: [
+          { text: 'Create a Transaction', link: '/operations/vault/create-transaction' },
+          { text: 'Create a Proposal', link: '/operations/vault/create-proposal' },
+          { text: 'Activate a Proposal', link: '/operations/vault/activate-proposal' },
+          { text: 'Approve a Proposal', link: '/operations/vault/approve-proposal' },
+          { text: 'Reject a Proposal', link: '/operations/vault/reject-proposal' },
+          { text: 'Cancel a Proposal', link: '/operations/vault/cancel-proposal' },
+          { text: 'Execute a Transaction', link: '/operations/vault/execute-transaction' },
+          { text: 'Close a Transaction', link: '/operations/vault/close-transaction' },
+        ],
+      },
+      {
+        text: 'Settings Transactions',
+        items: [
+          { text: 'Create a Settings Transaction', link: '/operations/settings/create' },
+          { text: 'Execute a Settings Transaction', link: '/operations/settings/execute' },
+          { text: 'Close a Settings Transaction', link: '/operations/settings/close' },
+          { text: 'Execute Synchronously', link: '/operations/settings/execute-sync' },
+        ],
+      },
+      {
+        text: 'Synchronous Execution',
+        items: [
+          { text: 'Execute a Transaction (sync)', link: '/operations/execute-transaction-sync' },
         ],
       },
       {
         text: 'Reference',
         items: [
-          { text: 'Program Client', link: '/reference/program-client' },
+          { text: 'PDA Derivation & Fetchers', link: '/reference/pda-and-fetchers' },
+          { text: 'Account Types', link: '/reference/account-types' },
           { text: 'Instruction Coverage', link: '/reference/instruction-coverage' },
         ],
       },
