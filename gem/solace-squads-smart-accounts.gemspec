@@ -17,18 +17,28 @@ Gem::Specification.new do |spec|
   spec.metadata['allowed_push_host']     = 'https://rubygems.org'
   spec.metadata['source_code_uri']       = 'https://github.com/zarpay/solace-squads-smart-accounts'
   spec.metadata['changelog_uri']         = 'https://github.com/zarpay/solace-squads-smart-accounts/blob/main/CHANGELOG.md'
+  spec.metadata['documentation_uri']     = 'https://zarpay.github.io/solace-squads-smart-accounts'
   spec.metadata['rubygems_mfa_required'] = 'true'
 
   # Packaged files are the library only; README/LICENSE/CHANGELOG live at the repo root.
   spec.files         = Dir.glob('lib/**/*').reject { |path| File.directory?(path) }
   spec.require_paths = ['lib']
 
-  # Runtime dependencies
-  spec.add_dependency 'solace'
-  spec.add_dependency 'solana-program-library' # Assuming we might need SDLS or similar if needed, but let's keep it minimal for now
+  # Runtime dependencies.
+  #
+  # The solace constraint is intentionally open-ended (no upper bound) so a host app can
+  # track newer solace releases without a version conflict; 0.1.5 is the floor — it
+  # introduced Solace::Programs::Token2022, which this gem relies on.
+  #
+  # base64 is exercised through solace's account decoding (base64_to_bytestream) and is
+  # not a default gem on Ruby 3.4+, so we declare it to keep the gem self-sufficient.
+  spec.add_dependency 'base64'
+  spec.add_dependency 'solace', '>= 0.1.5'
 
-  # Development dependencies
+  # Development dependencies.
   spec.add_development_dependency 'minitest', '~> 5.0'
+  spec.add_development_dependency 'minitest-hooks', '~> 1.5'
   spec.add_development_dependency 'rake', '~> 13.0'
-  spec.add_development_dependency 'solana-test-validator' # If available as a gem or we use system calls
+  spec.add_development_dependency 'rubocop'
+  spec.add_development_dependency 'rubocop-yard'
 end
