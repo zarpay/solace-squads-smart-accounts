@@ -1,6 +1,9 @@
 # Local solana-test-validator ledger (recreated fresh on every test run)
 /test-ledger/
 
+# Generated vault-address lookup table (rake squads:build_index)
+/vault-index.bin
+
 # Build / packaging artifacts
 /builds/
 /pkg/

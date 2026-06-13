@@ -99,6 +99,7 @@ export default defineConfig({
         text: 'Reference',
         items: [
           { text: 'PDA Derivation & Fetchers', link: '/reference/pda-and-fetchers' },
+          { text: 'Vault Address Lookup', link: '/reference/vault-index-lookup' },
           { text: 'Account Types', link: '/reference/account-types' },
           { text: 'Instruction Coverage', link: '/reference/instruction-coverage' },
         ],

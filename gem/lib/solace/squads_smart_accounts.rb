@@ -19,6 +19,9 @@ req_glob('squads_smart_accounts/composers/*.rb')
 # Load programs
 req_glob('squads_smart_accounts/programs/*.rb')
 
+# Load the reverse vault-address lookup (depends on the program layer)
+require 'solace/squads_smart_accounts/vault_index'
+
 module Solace
   module SquadsSmartAccounts
     class Error < StandardError; end
