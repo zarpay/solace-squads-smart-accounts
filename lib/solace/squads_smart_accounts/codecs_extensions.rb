@@ -106,6 +106,16 @@ module Solace
           pubkeys.flat_map { |pubkey| encode_pubkey(pubkey) }
       end
 
+      # Encodes a SmallVec<u8, Pubkey>: u8 count prefix followed by each 32-byte
+      # pubkey. Used by the transaction message header's account_keys (distinct
+      # from encode_vec_pubkeys, which uses a u32 count).
+      #
+      # @param pubkeys [Array<#to_s>] The public keys in any representation (max 255).
+      # @return [Array<Integer>]
+      def encode_smallvec_u8_pubkeys(pubkeys)
+        [pubkeys.length] + pubkeys.flat_map { |pubkey| encode_pubkey(pubkey) }
+      end
+
       # Encodes a Vec<SmartAccountSigner> in Borsh format.
       # u32 length prefix followed by each signer's 32-byte pubkey + 1-byte permission mask.
       #

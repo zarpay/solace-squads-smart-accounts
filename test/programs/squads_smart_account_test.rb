@@ -1611,4 +1611,87 @@ describe Solace::Programs::SquadsSmartAccount do
       end
     end
   end
+
+  describe '#create_transaction' do
+    # Creates an autonomous 1-of-1 smart account (paid by the creator) and funds
+    # its default vault. Returned identity is the subject of a later createTransaction.
+    def funded_account
+      identity = create_smart_account(
+        program,
+        payer:     creator,
+        creator:,
+        threshold: 1,
+        signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+      )
+
+      fund_account(connection, identity.smart_account_address, 1_000_000_000)
+      identity
+    end
+
+    # Stores a vault → recipient transfer transaction and returns
+    # [tx, deserialized Transaction].
+    def store_vault_transfer(identity:, payer:, rent_payer:)
+      tx = program.create_transaction(
+        payer:,
+        settings:     identity.settings_address,
+        creator:,
+        rent_payer:,
+        instructions: [
+          Solace::Composers::SystemProgramTransferComposer.new(
+            from:     identity.smart_account_address,
+            to:       Solace::Keypair.generate.address,
+            lamports: 250_000_000
+          )
+        ]
+      )
+
+      connection.wait_for_confirmed_signature { tx.signature }
+
+      transaction_address, = program.get_transaction_address(
+        settings_address:  identity.settings_address,
+        transaction_index: 1
+      )
+
+      [tx, program.get_transaction(transaction_address:)]
+    end
+
+    describe 'when the creator pays for the transaction' do
+      before(:all) do
+        @tx, @transaction = store_vault_transfer(identity: funded_account, payer: creator, rent_payer: creator)
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'stores the transaction at index 1 for the default vault' do
+        assert_equal 1, @transaction.index
+        assert_equal 0, @transaction.account_index
+      end
+
+      it 'compiles the inner vault-transfer message' do
+        assert_equal 1, @transaction.num_signers
+        assert_equal 3, @transaction.account_keys.length
+      end
+    end
+
+    describe 'when a separate sponsor pays for the transaction' do
+      before(:all) do
+        identity = funded_account
+
+        # Snapshot after setup so the delta reflects only the createTransaction.
+        @creator_starting_balance = connection.get_balance(creator.address)
+        @tx, @transaction         = store_vault_transfer(identity:, payer:, rent_payer: payer)
+        @creator_ending_balance   = connection.get_balance(creator.address)
+      end
+
+      it 'stores the transaction' do
+        assert_equal 1, @transaction.index
+      end
+
+      it 'deducts nothing from the creator (sponsor pays the fee and account rent)' do
+        assert_equal @creator_starting_balance, @creator_ending_balance
+      end
+    end
+  end
 end

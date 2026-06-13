@@ -9,7 +9,7 @@ method on `Solace::Programs::SquadsSmartAccount`.
 ## Core Transaction Lifecycle
 
 - [x] `createSmartAccount` — Create a smart account (+ program method `create_smart_account`)
-- [ ] `createTransaction` — Create a new vault transaction
+- [x] `createTransaction` — Create a new vault transaction (+ program method `create_transaction`; simple messages only — no ephemeral signers / ALTs. NOTE: deployed program uses the newer enum args + 6th `program` account, not the stale bundled IDL)
 - [ ] `createProposal` — Create a new proposal
 - [ ] `activateProposal` — Update proposal status from Draft to Active
 - [ ] `approveProposal` — Approve a proposal on behalf of a signer

@@ -64,6 +64,22 @@ module Solace
             Solace::SquadsSmartAccounts::PROGRAM_ID
           )
         end
+
+        # Gets the address of a Transaction PDA.
+        #
+        # The on-chain derivation is
+        # ["smart_account", settings_pda, "transaction", u64(transaction_index)].
+        #
+        # @param settings_address [#to_s] Base58 address of the settings account.
+        # @param transaction_index [Integer] The transaction index (settings.transaction_index + 1 for a new one).
+        # @return [Array<String, Integer>] The transaction address and bump seed.
+        def get_transaction_address(settings_address:, transaction_index:)
+          Solace::Utils::PDA.find_program_address(
+            ['smart_account', settings_address.to_s, 'transaction',
+             Solace::Utils::Codecs.encode_le_u64(transaction_index).bytes],
+            Solace::SquadsSmartAccounts::PROGRAM_ID
+          )
+        end
       end
 
       # Initializes a new Squads Smart Account client.
@@ -97,6 +113,14 @@ module Solace
         self.class.get_spending_limit_address(**options)
       end
 
+      # Alias method for get_transaction_address
+      #
+      # @param options [Hash] A hash of options for the get_transaction_address class method
+      # @return [Array<String, Integer>] The transaction address and bump seed.
+      def get_transaction_address(**options)
+        self.class.get_transaction_address(**options)
+      end
+
       # Fetches and deserializes a SpendingLimit account from the chain.
       #
       # @param spending_limit_address [#to_s] Base58 address of the spending limit account.
@@ -107,6 +131,20 @@ module Solace
         raise "SpendingLimit account not found at #{spending_limit_address}" unless account
 
         Solace::SquadsSmartAccounts::SpendingLimit.deserialize(
+          Solace::Utils::Codecs.base64_to_bytestream(account['data'][0])
+        )
+      end
+
+      # Fetches and deserializes a Transaction account from the chain.
+      #
+      # @param transaction_address [#to_s] Base58 address of the transaction account.
+      # @return [SquadsSmartAccounts::Transaction] The deserialized transaction.
+      # @raise [RuntimeError] If the account does not exist at the given address.
+      def get_transaction(transaction_address:)
+        account = connection.get_account_info(transaction_address.to_s)
+        raise "Transaction account not found at #{transaction_address}" unless account
+
+        Solace::SquadsSmartAccounts::Transaction.deserialize(
           Solace::Utils::Codecs.base64_to_bytestream(account['data'][0])
         )
       end
@@ -956,6 +994,88 @@ module Solace
         TransactionComposer
           .new(connection:)
           .add_instruction(remove_spending_limit_ix)
+      end
+
+      # Creates a pending vault transaction from inner instructions, signs it,
+      # and (optionally) sends it. The transaction is stored, not executed — it
+      # awaits a proposal and approvals (see the proposal flow).
+      #
+      # @example Store a vault → recipient transfer for later approval
+      #   tx = program.create_transaction(
+      #     payer: creator,
+      #     settings: identity.settings_address,
+      #     creator: creator,
+      #     rent_payer: creator,
+      #     instructions: [
+      #       Solace::Composers::SystemProgramTransferComposer.new(
+      #         from: identity.smart_account_address, to: recipient, lamports: 1_000_000
+      #       )
+      #     ]
+      #   )
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_create_transaction}.
+      # @return [Transaction] The created or sent transaction.
+      def create_transaction(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_create_transaction(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:creator], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a create-transaction transaction. The transaction index is the
+      # settings account's current transaction_index + 1, and the Transaction PDA
+      # is derived from it here.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param creator [#to_s, Keypair] The transaction creator (must sign).
+      # @param rent_payer [#to_s, Keypair] Funds the new account's rent.
+      # @param instructions [Array<Composers::Base>] Inner instruction composers.
+      # @param account_index [Integer] (Optional) Vault index (default: 0).
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_create_transaction(
+        settings:,
+        creator:,
+        rent_payer:,
+        instructions:,
+        account_index: 0,
+        memo: nil
+      )
+        transaction_index = get_settings(settings_address: settings.to_s).transaction_index + 1
+        transaction,      = get_transaction_address(settings_address: settings.to_s, transaction_index:)
+
+        create_transaction_ix = Composers::SquadsSmartAccountsCreateTransactionComposer.new(
+          settings:,
+          transaction:,
+          creator:,
+          rent_payer:,
+          instructions:,
+          account_index:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(create_transaction_ix)
       end
 
       private
