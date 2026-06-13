@@ -46,6 +46,11 @@ Metrics/BlockLength:
 Naming/AccessorMethodName:
   Enabled: false
 
+# Numbered locals/ivars (settings transaction #1/#2, vote #1/#2) read more
+# clearly in the integration narratives than the normalcase form this cop wants.
+Naming/VariableNumber:
+  Enabled: false
+
 # Require Ruby 3.1+ hash value omission (foo: foo → foo:) wherever possible.
 Style/HashSyntax:
   EnforcedShorthandSyntax: always

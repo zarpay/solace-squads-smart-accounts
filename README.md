@@ -17,6 +17,26 @@ The naming can be confusing: `createSmartAccount` does not create an account cal
 
 One settings account governs arbitrarily many smart accounts (account index 0, 1, 2, …) — same signers and threshold, separate balances. Spending from a smart account goes through governance: a `Transaction` account holds the instructions, a `Proposal` collects votes per the settings threshold, and on execution the program signs the instructions as the smart account PDA.
 
+## Coverage
+
+Covers the flows needed for normal smart-account usage. See [`INSTRUCTIONS.md`](INSTRUCTIONS.md) for the per-instruction checklist.
+
+- **Account creation** — `createSmartAccount`.
+- **Async transaction lifecycle** — `createTransaction` → `createProposal` → `activateProposal` → `approveProposal` / `rejectProposal` / `cancelProposal` → `executeTransaction` → `closeTransaction`.
+- **Synchronous execution** — `executeTransactionSync`: a single transaction, co-signed up to the threshold, with no proposal lifecycle.
+- **Settings transactions** — both the async flow (`createSettingsTransaction` → proposal/vote → `executeSettingsTransaction` → `closeSettingsTransaction`) and the synchronous `executeSettingsTransactionSync`; all `SettingsAction` variants except `SetArchivalAuthority`.
+- **Controlled-account authority actions** — add/remove signer, change threshold, set time lock, and set a new settings authority (the `*AsAuthority` instructions).
+- **Spending limits** — add, remove, and use, across SOL, SPL Token, and Token-2022, in both controlled and autonomous modes.
+
+## Limitations
+
+- **Address Lookup Tables (ALTs) are not supported.** `createTransaction` and `executeTransaction` handle only "simple" compiled messages — the message's `address_table_lookups` must be empty, and stored-message replay on execution assumes no lookup-table accounts. Pass full 32-byte addresses in the inner instructions.
+- **Ephemeral signers are not supported.** `createTransaction` is fixed at `ephemeral_signers: 0`; messages that need program-derived ephemeral signers are not handled.
+- **Transaction buffers** (`createTransactionBuffer` and friends) are not implemented, so transactions too large for a single message cannot be staged.
+- **Batches** (`createBatch` and friends) are not implemented.
+- **`setArchivalAuthorityAsAuthority`** is deliberately skipped — the archival feature is inert in the deployed program (the field is preset to defaults and consumed by nothing). Revisit when Squads ships archival.
+- **Program-config admin instructions** (`initializeProgramConfig`, `setProgramConfig*`) and **`logEvent`** are out of scope for normal usage.
+
 ## Usage
 
 ```ruby
