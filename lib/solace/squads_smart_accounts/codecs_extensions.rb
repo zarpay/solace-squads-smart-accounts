@@ -6,82 +6,62 @@ module Solace
     # covered by the base gem. Candidates for upstreaming to solace when the need
     # is confirmed across other extension gems.
     module Codecs
+      extend self
+
+      # Encodes a SmallVec<u8, u8>: u8 length prefix + raw bytes.
+      #
+      # @param bytes [Array<Integer>] The raw bytes (max 255).
+      # @return [Array<Integer>]
+      def encode_smallvec_u8_bytes(bytes)
+        [bytes.length] + bytes
+      end
+
       # Encodes a u16 as 2 little-endian bytes.
       #
       # @param u16 [Integer] Value in range 0..65535.
       # @return [String] 2-byte little-endian binary string.
-      def self.encode_le_u16(u16)
+      def encode_le_u16(u16)
         [u16].pack('S<')
+      end
+
+      # Encodes a SmallVec<u16, u8>: u16 LE length prefix + raw bytes.
+      #
+      # @param bytes [Array<Integer>] The raw bytes (max 65535).
+      # @return [Array<Integer>]
+      def encode_smallvec_u16_bytes(bytes)
+        encode_le_u16(bytes.length).bytes + bytes
       end
 
       # Encodes a u32 as 4 little-endian bytes.
       #
       # @param u32 [Integer] Value in range 0..4294967295.
       # @return [String] 4-byte little-endian binary string.
-      def self.encode_le_u32(u32)
+      def encode_le_u32(u32)
         [u32].pack('L<')
-      end
-
-      # Encodes a u128 as 16 little-endian bytes (two u64 words, low word first).
-      #
-      # @param u128 [Integer] Value in range 0..2**128-1.
-      # @return [String] 16-byte little-endian binary string.
-      def self.encode_le_u128(u128)
-        [u128 & 0xFFFFFFFFFFFFFFFF, u128 >> 64].pack('Q<Q<')
-      end
-
-      # Encodes a public key as 32 bytes. Accepts any representation that
-      # resolves to a base58 string via #to_s (String, Keypair, PublicKey).
-      #
-      # @param pubkey [#to_s] The public key in any representation.
-      # @return [Array<Integer>] 32 bytes.
-      def self.encode_pubkey(pubkey)
-        Solace::Utils::Codecs.base58_to_bytes(pubkey.to_s)
       end
 
       # Encodes an i64 as 8 little-endian bytes (two's complement).
       #
       # @param i64 [Integer] Value in range -2**63..2**63-1.
       # @return [String] 8-byte little-endian binary string.
-      def self.encode_le_i64(i64)
+      def encode_le_i64(i64)
         [i64].pack('q<')
       end
 
-      # Decodes an i64 from 8 little-endian bytes (two's complement).
+      # Encodes a u128 as 16 little-endian bytes (two u64 words, low word first).
       #
-      # @param stream [IO, StringIO] The stream to read from.
-      # @return [Integer] Value in range -2**63..2**63-1.
-      def self.decode_le_i64(stream)
-        stream.read(8).unpack1('q<')
+      # @param u128 [Integer] Value in range 0..2**128-1.
+      # @return [String] 16-byte little-endian binary string.
+      def encode_le_u128(u128)
+        [u128 & 0xFFFFFFFFFFFFFFFF, u128 >> 64].pack('Q<Q<')
       end
 
-      # Encodes a Vec<publicKey> in Borsh format.
-      # u32 LE count prefix followed by each 32-byte pubkey.
+      # Encodes a Borsh bytes field: u32 LE length prefix + raw bytes.
       #
-      # @param pubkeys [Array<#to_s>] The public keys in any representation.
+      # @param bytes [Array<Integer>] The raw bytes.
       # @return [Array<Integer>]
-      def self.encode_vec_pubkeys(pubkeys)
-        encode_le_u32(pubkeys.length).bytes +
-          pubkeys.flat_map { |pubkey| encode_pubkey(pubkey) }
-      end
-
-      # Decodes a Vec<publicKey> in Borsh format.
-      #
-      # @param stream [IO, StringIO] The stream to read from.
-      # @return [Array<String>] Base58 public keys.
-      def self.decode_vec_pubkeys(stream)
-        Array.new(decode_le_u32(stream)) { decode_pubkey(stream) }
-      end
-
-      # Encodes an Option<publicKey> in Borsh format.
-      # None → [0], Some(key) → [1] + 32 bytes.
-      #
-      # @param pubkey [String, nil] Base58 public key or nil.
-      # @return [Array<Integer>]
-      def self.encode_option_pubkey(pubkey)
-        return [0] if pubkey.nil?
-
-        [1] + encode_pubkey(pubkey)
+      def encode_bytes(bytes)
+        encode_le_u32(bytes.length).bytes + bytes
       end
 
       # Encodes an Option<String> in Borsh format.
@@ -89,11 +69,41 @@ module Solace
       #
       # @param str [String, nil]
       # @return [Array<Integer>]
-      def self.encode_option_string(str)
+      def encode_option_string(str)
         return [0] if str.nil?
 
         bytes = str.encode('UTF-8').bytes
         [1] + encode_le_u32(bytes.length).bytes + bytes
+      end
+
+      # Encodes a public key as 32 bytes. Accepts any representation that
+      # resolves to a base58 string via #to_s (String, Keypair, PublicKey).
+      #
+      # @param pubkey [#to_s] The public key in any representation.
+      # @return [Array<Integer>] 32 bytes.
+      def encode_pubkey(pubkey)
+        Solace::Utils::Codecs.base58_to_bytes(pubkey.to_s)
+      end
+
+      # Encodes an Option<publicKey> in Borsh format.
+      # None → [0], Some(key) → [1] + 32 bytes.
+      #
+      # @param pubkey [String, nil] Base58 public key or nil.
+      # @return [Array<Integer>]
+      def encode_option_pubkey(pubkey)
+        return [0] if pubkey.nil?
+
+        [1] + encode_pubkey(pubkey)
+      end
+
+      # Encodes a Vec<publicKey> in Borsh format.
+      # u32 LE count prefix followed by each 32-byte pubkey.
+      #
+      # @param pubkeys [Array<#to_s>] The public keys in any representation.
+      # @return [Array<Integer>]
+      def encode_vec_pubkeys(pubkeys)
+        encode_le_u32(pubkeys.length).bytes +
+          pubkeys.flat_map { |pubkey| encode_pubkey(pubkey) }
       end
 
       # Encodes a Vec<SmartAccountSigner> in Borsh format.
@@ -101,35 +111,20 @@ module Solace
       #
       # @param signers [Array<SquadsSmartAccounts::SmartAccountSigner>]
       # @return [Array<Integer>]
-      def self.encode_smart_account_signers(signers)
+      def encode_smart_account_signers(signers)
         encode_le_u32(signers.length).bytes +
           signers.flat_map do |signer|
             encode_pubkey(signer.pubkey) + [signer.permission]
           end
       end
 
-      # Encodes a Borsh bytes field: u32 LE length prefix + raw bytes.
+      # Encodes a Vec<SettingsAction> in Borsh format.
+      # u32 LE count prefix followed by each action's variant index + field bytes.
       #
-      # @param bytes [Array<Integer>] The raw bytes.
+      # @param actions [Array<SquadsSmartAccounts::SettingsAction>]
       # @return [Array<Integer>]
-      def self.encode_bytes(bytes)
-        encode_le_u32(bytes.length).bytes + bytes
-      end
-
-      # Encodes a SmallVec<u8, u8>: u8 length prefix + raw bytes.
-      #
-      # @param bytes [Array<Integer>] The raw bytes (max 255).
-      # @return [Array<Integer>]
-      def self.encode_smallvec_u8_bytes(bytes)
-        [bytes.length] + bytes
-      end
-
-      # Encodes a SmallVec<u16, u8>: u16 LE length prefix + raw bytes.
-      #
-      # @param bytes [Array<Integer>] The raw bytes (max 65535).
-      # @return [Array<Integer>]
-      def self.encode_smallvec_u16_bytes(bytes)
-        encode_le_u16(bytes.length).bytes + bytes
+      def encode_settings_actions(actions)
+        encode_le_u32(actions.length).bytes + actions.flat_map(&:serialize)
       end
 
       # Encodes a SmallVec<u8, CompiledInstruction> — the wire format the Squads
@@ -151,7 +146,7 @@ module Solace
       #
       # @param instructions [Array<Solace::Instruction>]
       # @return [Array<Integer>]
-      def self.encode_compiled_instructions(instructions)
+      def encode_compiled_instructions(instructions)
         [instructions.length] +
           instructions.flat_map do |ix|
             [ix.program_index] +
@@ -160,36 +155,35 @@ module Solace
           end
       end
 
-      # Encodes a Vec<SettingsAction> in Borsh format.
-      # u32 LE count prefix followed by each action's variant index + field bytes.
+      # Decodes an i64 from 8 little-endian bytes (two's complement).
       #
-      # @param actions [Array<SquadsSmartAccounts::SettingsAction>]
-      # @return [Array<Integer>]
-      def self.encode_settings_actions(actions)
-        encode_le_u32(actions.length).bytes + actions.flat_map(&:serialize)
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [Integer] Value in range -2**63..2**63-1.
+      def decode_le_i64(stream)
+        stream.read(8).unpack1('q<')
+      end
+
+      # Decodes a Vec<publicKey> in Borsh format.
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [Array<String>] Base58 public keys.
+      def decode_vec_pubkeys(stream)
+        Array.new(decode_le_u32(stream)) { decode_pubkey(stream) }
       end
 
       # Decodes a u8 from 1 byte.
       #
       # @param stream [IO, StringIO] The stream to read from.
       # @return [Integer] Value in range 0..255.
-      def self.decode_u8(stream)
+      def decode_u8(stream)
         stream.read(1).unpack1('C')
-      end
-
-      # Decodes a public key from 32 bytes.
-      #
-      # @param stream [IO, StringIO] The stream to read from.
-      # @return [String] Base58 public key.
-      def self.decode_pubkey(stream)
-        Solace::Utils::Codecs.bytes_to_base58(stream.read(32).bytes)
       end
 
       # Decodes a u16 from 2 little-endian bytes.
       #
       # @param stream [IO, StringIO] The stream to read from.
       # @return [Integer] Value in range 0..65535.
-      def self.decode_le_u16(stream)
+      def decode_le_u16(stream)
         stream.read(2).unpack1('S<')
       end
 
@@ -197,7 +191,7 @@ module Solace
       #
       # @param stream [IO, StringIO] The stream to read from.
       # @return [Integer] Value in range 0..4294967295.
-      def self.decode_le_u32(stream)
+      def decode_le_u32(stream)
         stream.read(4).unpack1('L<')
       end
 
@@ -205,9 +199,17 @@ module Solace
       #
       # @param stream [IO, StringIO] The stream to read from.
       # @return [Integer] Value in range 0..2**128-1.
-      def self.decode_le_u128(stream)
+      def decode_le_u128(stream)
         lo, hi = stream.read(16).unpack('Q<Q<')
         lo + (hi << 64)
+      end
+
+      # Decodes a public key from 32 bytes.
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [String] Base58 public key.
+      def decode_pubkey(stream)
+        Solace::Utils::Codecs.bytes_to_base58(stream.read(32).bytes)
       end
 
       # Decodes an Option<publicKey> in Borsh format.
@@ -215,7 +217,7 @@ module Solace
       #
       # @param stream [IO, StringIO] The stream to read from.
       # @return [String, nil] Base58 public key or nil.
-      def self.decode_option_pubkey(stream)
+      def decode_option_pubkey(stream)
         return nil if decode_u8(stream).zero?
 
         decode_pubkey(stream)
@@ -226,7 +228,7 @@ module Solace
       #
       # @param stream [IO, StringIO] The stream to read from.
       # @return [Array<SquadsSmartAccounts::SmartAccountSigner>]
-      def self.decode_smart_account_signers(stream)
+      def decode_smart_account_signers(stream)
         Array.new(decode_le_u32(stream)) do
           SquadsSmartAccounts::SmartAccountSigner.new(
             pubkey:     decode_pubkey(stream),

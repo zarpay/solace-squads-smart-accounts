@@ -57,3 +57,7 @@ Layout/HashAlignment:
 # Enforce column alignment of consecutive `=` assignments.
 Layout/ExtraSpacing:
   ForceEqualSignAlignment: true
+
+# Prefer `extend self` over `module_function` for module-level helpers.
+Style/ModuleFunction:
+  EnforcedStyle: extend_self
