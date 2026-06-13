@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'bundler/gem_tasks' # provides build / install / release (used by the release workflow)
 require 'rake/testtask'
 # Load custom rake task handlers.
 Dir.glob('rake/handlers/**/*.rb').each { |task_file| load task_file }

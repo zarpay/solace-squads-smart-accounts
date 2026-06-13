@@ -8,5 +8,6 @@
 /builds/
 /pkg/
 /.bundle/
+/vendor/
 /coverage/
 /tmp/
