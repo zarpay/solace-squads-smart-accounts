@@ -1,5 +1,6 @@
 # solace-squads-smart-accounts
 
+[![Gem Version](https://img.shields.io/gem/v/solace-squads-smart-accounts.svg)](https://rubygems.org/gems/solace-squads-smart-accounts)
 [![CI](https://github.com/zarpay/solace-squads-smart-accounts/actions/workflows/main.yml/badge.svg)](https://github.com/zarpay/solace-squads-smart-accounts/actions/workflows/main.yml)
 [![Docs](https://img.shields.io/badge/docs-zarpay.github.io-2b7489.svg)](https://zarpay.github.io/solace-squads-smart-accounts)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE.txt)
