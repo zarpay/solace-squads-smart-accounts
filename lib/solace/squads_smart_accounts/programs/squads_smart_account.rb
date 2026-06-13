@@ -174,6 +174,20 @@ module Solace
         )
       end
 
+      # Fetches and deserializes a SettingsTransaction account from the chain.
+      #
+      # @param transaction_address [#to_s] Base58 address of the settings transaction account.
+      # @return [SquadsSmartAccounts::SettingsTransaction] The deserialized settings transaction.
+      # @raise [RuntimeError] If the account does not exist at the given address.
+      def get_settings_transaction(transaction_address:)
+        account = connection.get_account_info(transaction_address.to_s)
+        raise "SettingsTransaction account not found at #{transaction_address}" unless account
+
+        Solace::SquadsSmartAccounts::SettingsTransaction.deserialize(
+          Solace::Utils::Codecs.base64_to_bytestream(account['data'][0])
+        )
+      end
+
       # Fetches and deserializes a Proposal account from the chain.
       #
       # @param proposal_address [#to_s] Base58 address of the proposal account.
@@ -1318,6 +1332,67 @@ module Solace
           .add_instruction(reject_proposal_ix)
       end
 
+      # Cancels an Approved proposal on behalf of a signer, signs it, and
+      # (optionally) sends it. The signer must be a smart-account member with the
+      # Vote permission; once cancellations reach the threshold the proposal
+      # becomes Cancelled and its transaction can no longer execute.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_cancel_proposal}.
+      # @return [Transaction] The created or sent transaction.
+      def cancel_proposal(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_cancel_proposal(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:signer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a cancel-proposal transaction. The Proposal PDA is derived from
+      # the settings address and transaction index here.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param signer [#to_s, Keypair] The voting signer (must sign).
+      # @param transaction_index [Integer] Index of the transaction the proposal tracks.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_cancel_proposal(
+        settings:,
+        signer:,
+        transaction_index:,
+        memo: nil
+      )
+        proposal, = get_proposal_address(settings_address: settings.to_s, transaction_index:)
+
+        cancel_proposal_ix = Composers::SquadsSmartAccountsCancelProposalComposer.new(
+          settings:,
+          signer:,
+          proposal:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(cancel_proposal_ix)
+      end
+
       # Activates a draft proposal (Draft → Active), signs it, and (optionally)
       # sends it. The signer must be a smart-account member with the Initiate
       # permission. Only needed for proposals created with `draft: true`.
@@ -1452,6 +1527,218 @@ module Solace
         TransactionComposer
           .new(connection:)
           .add_instruction(execute_transaction_ix)
+      end
+
+      # Creates a settings transaction (a stored batch of SettingsActions) on an
+      # autonomous smart account, signs it, and (optionally) sends it. The
+      # transaction is stored, not applied — it awaits a proposal and approvals.
+      #
+      # @example Store a "raise the threshold" settings change for later approval
+      #   tx = program.create_settings_transaction(
+      #     payer: creator,
+      #     settings: identity.settings_address,
+      #     creator: creator,
+      #     rent_payer: creator,
+      #     actions: [SettingsAction.change_threshold(2)]
+      #   )
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_create_settings_transaction}.
+      # @return [Transaction] The created or sent transaction.
+      def create_settings_transaction(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_create_settings_transaction(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:creator], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a create-settings-transaction transaction. The transaction index
+      # is the settings account's current transaction_index + 1, and the
+      # SettingsTransaction PDA is derived from it here.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param creator [#to_s, Keypair] A signer creating the transaction (must sign).
+      # @param rent_payer [#to_s, Keypair] Funds the new account's rent.
+      # @param actions [Array<SquadsSmartAccounts::SettingsAction>] Actions to store.
+      # @param memo [String] (Optional) Indexing memo.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_create_settings_transaction(
+        settings:,
+        creator:,
+        rent_payer:,
+        actions:,
+        memo: nil
+      )
+        transaction_index = get_settings(settings_address: settings.to_s).transaction_index + 1
+        transaction,      = get_transaction_address(settings_address: settings.to_s, transaction_index:)
+
+        create_settings_transaction_ix = Composers::SquadsSmartAccountsCreateSettingsTransactionComposer.new(
+          settings:,
+          transaction:,
+          creator:,
+          rent_payer:,
+          actions:,
+          memo:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(create_settings_transaction_ix)
+      end
+
+      # Applies an Approved proposal's stored settings transaction, signs it, and
+      # (optionally) sends it. The signer must be a smart-account member with the
+      # Execute permission, and the proposal must be Approved with its time lock
+      # elapsed.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_execute_settings_transaction}.
+      # @return [Transaction] The created or sent transaction.
+      def execute_settings_transaction(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_execute_settings_transaction(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer, composer_opts[:signer], composer_opts[:rent_payer])
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares an execute-settings-transaction transaction. The Proposal and
+      # SettingsTransaction PDAs are derived from the settings address and
+      # transaction index here.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param signer [#to_s, Keypair] The executing signer (must sign).
+      # @param transaction_index [Integer] Index of the settings transaction to apply.
+      # @param rent_payer [#to_s, Keypair] Pays for any settings realloc (must sign).
+      # @param spending_limit_accounts [Array<#to_s>] (Optional) SpendingLimit PDAs
+      #   touched by the actions, in action order.
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_execute_settings_transaction(
+        settings:,
+        signer:,
+        transaction_index:,
+        rent_payer:,
+        spending_limit_accounts: []
+      )
+        transaction, = get_transaction_address(settings_address: settings.to_s, transaction_index:)
+        proposal,    = get_proposal_address(settings_address: settings.to_s, transaction_index:)
+
+        execute_settings_transaction_ix = Composers::SquadsSmartAccountsExecuteSettingsTransactionComposer.new(
+          settings:,
+          signer:,
+          proposal:,
+          transaction:,
+          rent_payer:,
+          spending_limit_accounts:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(execute_settings_transaction_ix)
+      end
+
+      # Closes a settings transaction and its proposal, refunding their rent,
+      # signs it, and (optionally) sends it. Closeable once the proposal is
+      # terminal (Executed/Rejected/Cancelled) or stale. Only the fee payer signs.
+      #
+      # @param payer [Keypair] The keypair that will pay the transaction fee.
+      # @param sign [Boolean] Whether to sign the transaction.
+      # @param execute [Boolean] Whether to execute the transaction.
+      # @param composer_opts [Hash] Options for {#compose_close_settings_transaction}.
+      # @return [Transaction] The created or sent transaction.
+      def close_settings_transaction(
+        payer:,
+        sign: true,
+        execute: true,
+        **composer_opts
+      )
+        composer = compose_close_settings_transaction(**composer_opts)
+
+        yield composer if block_given?
+
+        tx = composer
+             .set_fee_payer(payer)
+             .compose_transaction
+
+        if sign
+          tx.sign(payer)
+
+          connection.send_transaction(tx.serialize) if execute
+        end
+
+        tx
+      end
+
+      # Prepares a close-settings-transaction transaction. The Proposal and
+      # SettingsTransaction PDAs are derived here; the rent collectors default to
+      # the on-chain values (the proposal's and transaction's stored collectors)
+      # when not supplied.
+      #
+      # @param settings [#to_s] Base58 address of the settings account.
+      # @param transaction_index [Integer] Index of the settings transaction to close.
+      # @param proposal_rent_collector [#to_s] (Optional) Receives the proposal rent
+      #   (defaults to the proposal's stored rent collector).
+      # @param transaction_rent_collector [#to_s] (Optional) Receives the transaction rent
+      #   (defaults to the transaction's stored rent collector).
+      # @return [TransactionComposer] A composer with required instructions.
+      def compose_close_settings_transaction(
+        settings:,
+        transaction_index:,
+        proposal_rent_collector: nil,
+        transaction_rent_collector: nil
+      )
+        transaction, = get_transaction_address(settings_address: settings.to_s, transaction_index:)
+        proposal,    = get_proposal_address(settings_address: settings.to_s, transaction_index:)
+
+        proposal_rent_collector    ||= get_proposal(proposal_address: proposal).rent_collector
+        transaction_rent_collector ||= get_settings_transaction(transaction_address: transaction).rent_collector
+
+        close_settings_transaction_ix = Composers::SquadsSmartAccountsCloseSettingsTransactionComposer.new(
+          settings:,
+          proposal:,
+          transaction:,
+          proposal_rent_collector:,
+          transaction_rent_collector:
+        )
+
+        TransactionComposer
+          .new(connection:)
+          .add_instruction(close_settings_transaction_ix)
       end
 
       private

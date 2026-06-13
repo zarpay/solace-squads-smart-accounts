@@ -1877,6 +1877,98 @@ describe Solace::Programs::SquadsSmartAccount do
       end
     end
 
+    describe '#cancel_proposal' do
+      # Advances a fresh account's index-1 proposal to Approved (the only state
+      # from which it can be cancelled) and returns the identity.
+      def approved_account
+        identity   = lifecycle_account
+        @recipient = Solace::Keypair.generate
+        store_transfer(identity:, recipient: @recipient)
+        open_proposal(identity:)
+
+        approve_tx = program.approve_proposal(
+          payer:             creator,
+          settings:          identity.settings_address,
+          signer:            creator,
+          transaction_index: 1
+        )
+        connection.wait_for_confirmed_signature { approve_tx.signature }
+
+        identity
+      end
+
+      describe 'when the signer pays for the transaction' do
+        before(:all) do
+          @identity = approved_account
+
+          @tx = program.cancel_proposal(
+            payer:             creator,
+            settings:          @identity.settings_address,
+            signer:            creator,
+            transaction_index: 1
+          )
+          connection.wait_for_confirmed_signature { @tx.signature }
+
+          @status = proposal_status(identity: @identity)
+        end
+
+        it 'returns the signed transaction' do
+          assert_kind_of Solace::Transaction, @tx
+        end
+
+        it 'marks the proposal cancelled once cancellations reach the threshold' do
+          assert_equal :cancelled, @status
+        end
+
+        it 'refuses to execute a cancelled proposal' do
+          assert_raises(Solace::Errors::RPCError) do
+            program.execute_transaction(
+              payer:             creator,
+              settings:          @identity.settings_address,
+              signer:            creator,
+              transaction_index: 1
+            )
+          end
+        end
+      end
+
+      describe 'when a separate sponsor pays for the transaction' do
+        before(:all) do
+          @identity = approved_account
+
+          @payer_starting_balance   = connection.get_balance(payer.address)
+          @creator_starting_balance = connection.get_balance(creator.address)
+
+          # The sponsor pays the fee; the creator only signs for Vote consensus.
+          @tx = program.cancel_proposal(
+            payer:,
+            settings:          @identity.settings_address,
+            signer:            creator,
+            transaction_index: 1
+          )
+          connection.wait_for_confirmed_signature { @tx.signature }
+
+          @payer_ending_balance   = connection.get_balance(payer.address)
+          @creator_ending_balance = connection.get_balance(creator.address)
+
+          @status = proposal_status(identity: @identity)
+        end
+
+        it 'marks the proposal cancelled' do
+          assert_equal :cancelled, @status
+        end
+
+        it 'deducts only the transaction fee from the sponsor' do
+          # 2 signatures (payer + creator) at 5000 lamports per signature
+          assert_equal @payer_starting_balance - (2 * 5000), @payer_ending_balance
+        end
+
+        it 'deducts nothing from the voting signer' do
+          assert_equal @creator_starting_balance, @creator_ending_balance
+        end
+      end
+    end
+
     describe '#execute_transaction' do
       describe 'when the signer pays for the transaction' do
         before(:all) do
@@ -1964,6 +2056,208 @@ describe Solace::Programs::SquadsSmartAccount do
         it 'deducts nothing from the executing signer' do
           assert_equal @creator_starting_balance, @creator_ending_balance
         end
+      end
+    end
+  end
+
+  # The settings-transaction async lifecycle: createSettingsTransaction →
+  # createProposal → approveProposal → executeSettingsTransaction →
+  # closeSettingsTransaction, applied to an autonomous account whose first stored
+  # transaction (index 1) carries a SetTimeLock action.
+  describe 'settings transaction lifecycle' do
+    let(:new_time_lock) { 100 }
+
+    # Creates an autonomous 1-of-1 account (creator pays and owns it).
+    def autonomous_account
+      create_smart_account(
+        program,
+        payer:     creator,
+        creator:,
+        threshold: 1,
+        signers:   [signer_klass.new(pubkey: creator.address, permission: permissions::ALL)]
+      )
+    end
+
+    # Stores a SetTimeLock settings transaction (index 1) and waits.
+    def store_time_lock_change(identity:, payer:, rent_payer:)
+      tx = program.create_settings_transaction(
+        payer:,
+        settings:   identity.settings_address,
+        creator:,
+        rent_payer:,
+        actions:    [Solace::SquadsSmartAccounts::SettingsAction.set_time_lock(new_time_lock)]
+      )
+
+      connection.wait_for_confirmed_signature { tx.signature }
+    end
+
+    # Opens and approves the index-1 proposal (creator pays and votes) and waits.
+    def propose_and_approve(identity:)
+      propose_tx = program.create_proposal(
+        payer:             creator,
+        settings:          identity.settings_address,
+        creator:,
+        rent_payer:        creator,
+        transaction_index: 1
+      )
+      connection.wait_for_confirmed_signature { propose_tx.signature }
+
+      approve_tx = program.approve_proposal(
+        payer:             creator,
+        settings:          identity.settings_address,
+        signer:            creator,
+        transaction_index: 1
+      )
+      connection.wait_for_confirmed_signature { approve_tx.signature }
+    end
+
+    describe '#create_settings_transaction' do
+      describe 'when the creator pays for the transaction' do
+        before(:all) do
+          @identity = autonomous_account
+          store_time_lock_change(identity: @identity, payer: creator, rent_payer: creator)
+
+          @transaction_address, = program.get_transaction_address(
+            settings_address:  @identity.settings_address,
+            transaction_index: 1
+          )
+          @transaction          = program.get_settings_transaction(transaction_address: @transaction_address)
+        end
+
+        it 'stores the settings transaction at index 1' do
+          assert_equal 1, @transaction.index
+        end
+
+        it 'records the creator' do
+          assert_equal creator.address, @transaction.creator
+        end
+      end
+
+      describe 'when a separate sponsor pays for the transaction' do
+        before(:all) do
+          @identity = autonomous_account
+
+          @creator_starting_balance = connection.get_balance(creator.address)
+          store_time_lock_change(identity: @identity, payer:, rent_payer: payer)
+          @creator_ending_balance   = connection.get_balance(creator.address)
+        end
+
+        it 'deducts nothing from the creator (sponsor pays the fee and account rent)' do
+          assert_equal @creator_starting_balance, @creator_ending_balance
+        end
+      end
+    end
+
+    describe '#execute_settings_transaction' do
+      describe 'when the signer pays for the transaction' do
+        before(:all) do
+          @identity = autonomous_account
+          store_time_lock_change(identity: @identity, payer: creator, rent_payer: creator)
+          propose_and_approve(identity: @identity)
+
+          @tx = program.execute_settings_transaction(
+            payer:             creator,
+            settings:          @identity.settings_address,
+            signer:            creator,
+            transaction_index: 1,
+            rent_payer:        creator
+          )
+          connection.wait_for_confirmed_signature { @tx.signature }
+
+          @settings = program.get_settings(settings_address: @identity.settings_address)
+        end
+
+        it 'returns the signed transaction' do
+          assert_kind_of Solace::Transaction, @tx
+        end
+
+        it 'applies the SetTimeLock action to the settings' do
+          assert_equal new_time_lock, @settings.time_lock
+        end
+      end
+
+      describe 'when a separate sponsor pays for the transaction' do
+        before(:all) do
+          @identity = autonomous_account
+          store_time_lock_change(identity: @identity, payer: creator, rent_payer: creator)
+          propose_and_approve(identity: @identity)
+
+          @payer_starting_balance   = connection.get_balance(payer.address)
+          @creator_starting_balance = connection.get_balance(creator.address)
+
+          # The sponsor pays the fee and rent; the creator only signs for consensus.
+          @tx = program.execute_settings_transaction(
+            payer:,
+            settings:          @identity.settings_address,
+            signer:            creator,
+            transaction_index: 1,
+            rent_payer:        payer
+          )
+          connection.wait_for_confirmed_signature { @tx.signature }
+
+          @payer_ending_balance   = connection.get_balance(payer.address)
+          @creator_ending_balance = connection.get_balance(creator.address)
+          @settings               = program.get_settings(settings_address: @identity.settings_address)
+        end
+
+        it 'applies the SetTimeLock action to the settings' do
+          assert_equal new_time_lock, @settings.time_lock
+        end
+
+        it 'deducts only the transaction fee from the sponsor (no realloc for SetTimeLock)' do
+          # 2 signatures (payer + creator) at 5000 lamports per signature
+          assert_equal @payer_starting_balance - (2 * 5000), @payer_ending_balance
+        end
+
+        it 'deducts nothing from the executing signer' do
+          assert_equal @creator_starting_balance, @creator_ending_balance
+        end
+      end
+    end
+
+    describe '#close_settings_transaction' do
+      before(:all) do
+        @identity = autonomous_account
+        store_time_lock_change(identity: @identity, payer: creator, rent_payer: creator)
+        propose_and_approve(identity: @identity)
+
+        execute_tx = program.execute_settings_transaction(
+          payer:             creator,
+          settings:          @identity.settings_address,
+          signer:            creator,
+          transaction_index: 1,
+          rent_payer:        creator
+        )
+        connection.wait_for_confirmed_signature { execute_tx.signature }
+
+        @proposal_address,    = program.get_proposal_address(
+          settings_address:  @identity.settings_address,
+          transaction_index: 1
+        )
+        @transaction_address, = program.get_transaction_address(
+          settings_address:  @identity.settings_address,
+          transaction_index: 1
+        )
+
+        # Rent collectors default to the on-chain stored collectors (the creator).
+        @tx = program.close_settings_transaction(
+          payer:             creator,
+          settings:          @identity.settings_address,
+          transaction_index: 1
+        )
+        connection.wait_for_confirmed_signature { @tx.signature }
+      end
+
+      it 'returns the signed transaction' do
+        assert_kind_of Solace::Transaction, @tx
+      end
+
+      it 'closes the settings transaction account' do
+        assert_nil connection.get_account_info(@transaction_address)
+      end
+
+      it 'closes the proposal account' do
+        assert_nil connection.get_account_info(@proposal_address)
       end
     end
   end

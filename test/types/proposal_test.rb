@@ -28,56 +28,102 @@ describe Solace::SquadsSmartAccounts::Proposal do
       codecs.encode_vec_pubkeys(rejected) +
       codecs.encode_vec_pubkeys(cancelled)
 
-    StringIO.new(bytes.pack('C*'))
+    klass.deserialize(StringIO.new(bytes.pack('C*')))
   end
 
-  it 'deserializes a draft proposal with no votes' do
-    io = encode_proposal(status_variant: 0, timestamp: 1_700_000_000, approved: [], rejected: [], cancelled: [])
+  describe 'a draft proposal with no votes' do
+    let(:proposal) do
+      encode_proposal(status_variant: 0, timestamp: 1_700_000_000, approved: [], rejected: [], cancelled: [])
+    end
 
-    proposal = klass.deserialize(io)
+    it 'decodes the settings' do
+      assert_equal settings, proposal.settings
+    end
 
-    assert_equal settings, proposal.settings
-    assert_equal 7, proposal.transaction_index
-    assert_equal rent_collector, proposal.rent_collector
-    assert_equal :draft, proposal.status
-    assert_equal 1_700_000_000, proposal.status_timestamp
-    assert_equal 254, proposal.bump
-    assert_empty proposal.approved
-    assert_empty proposal.rejected
-    assert_empty proposal.cancelled
+    it 'decodes the transaction index' do
+      assert_equal 7, proposal.transaction_index
+    end
+
+    it 'decodes the rent collector' do
+      assert_equal rent_collector, proposal.rent_collector
+    end
+
+    it 'decodes the status as draft' do
+      assert_equal :draft, proposal.status
+    end
+
+    it 'decodes the status timestamp' do
+      assert_equal 1_700_000_000, proposal.status_timestamp
+    end
+
+    it 'decodes the bump' do
+      assert_equal 254, proposal.bump
+    end
+
+    it 'has no approvals' do
+      assert_empty proposal.approved
+    end
+
+    it 'has no rejections' do
+      assert_empty proposal.rejected
+    end
+
+    it 'has no cancellations' do
+      assert_empty proposal.cancelled
+    end
   end
 
-  it 'deserializes an approved proposal with an approval vote' do
-    io = encode_proposal(status_variant: 3, timestamp: 1_700_000_500, approved: [approver], rejected: [], cancelled: [])
+  describe 'an approved proposal with an approval vote' do
+    let(:proposal) do
+      encode_proposal(status_variant: 3, timestamp: 1_700_000_500, approved: [approver], rejected: [], cancelled: [])
+    end
 
-    proposal = klass.deserialize(io)
+    it 'decodes the status as approved' do
+      assert_equal :approved, proposal.status
+    end
 
-    assert_equal :approved, proposal.status
-    assert_equal 1_700_000_500, proposal.status_timestamp
-    assert_equal [approver], proposal.approved
+    it 'decodes the status timestamp' do
+      assert_equal 1_700_000_500, proposal.status_timestamp
+    end
+
+    it 'records the approver' do
+      assert_equal [approver], proposal.approved
+    end
   end
 
-  it 'deserializes a rejected proposal with a rejection vote' do
-    io = encode_proposal(status_variant: 2, timestamp: 1_700_000_900, approved: [], rejected: [rejecter], cancelled: [])
+  describe 'a rejected proposal with a rejection vote' do
+    let(:proposal) do
+      encode_proposal(status_variant: 2, timestamp: 1_700_000_900, approved: [], rejected: [rejecter], cancelled: [])
+    end
 
-    proposal = klass.deserialize(io)
+    it 'decodes the status as rejected' do
+      assert_equal :rejected, proposal.status
+    end
 
-    assert_equal :rejected, proposal.status
-    assert_equal [rejecter], proposal.rejected
+    it 'records the rejecter' do
+      assert_equal [rejecter], proposal.rejected
+    end
   end
 
-  it 'deserializes the unit-only executing variant without a timestamp' do
-    io = encode_proposal(status_variant: 4, timestamp: nil, approved: [], rejected: [], cancelled: [])
+  describe 'the unit-only executing variant' do
+    let(:proposal) do
+      encode_proposal(status_variant: 4, timestamp: nil, approved: [], rejected: [], cancelled: [])
+    end
 
-    proposal = klass.deserialize(io)
+    it 'decodes the status as executing' do
+      assert_equal :executing, proposal.status
+    end
 
-    assert_equal :executing, proposal.status
-    assert_nil proposal.status_timestamp
+    it 'has no status timestamp' do
+      assert_nil proposal.status_timestamp
+    end
   end
 
-  it 'raises on an unknown status variant' do
-    io = encode_proposal(status_variant: 9, timestamp: nil, approved: [], rejected: [], cancelled: [])
-
-    assert_raises(RuntimeError) { klass.deserialize(io) }
+  describe 'an unknown status variant' do
+    it 'raises' do
+      assert_raises(RuntimeError) do
+        encode_proposal(status_variant: 9, timestamp: nil, approved: [], rejected: [], cancelled: [])
+      end
+    end
   end
 end

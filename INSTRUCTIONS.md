@@ -14,16 +14,16 @@ method on `Solace::Programs::SquadsSmartAccount`.
 - [x] `activateProposal` — Update proposal status from Draft to Active (+ program method `activate_proposal`; the lone proposal instruction with NO trailing `program` account)
 - [x] `approveProposal` — Approve a proposal on behalf of a signer (+ program method `approve_proposal`)
 - [x] `rejectProposal` — Reject a proposal on behalf of a signer (+ program method `reject_proposal`)
-- [ ] `cancelProposal` — Cancel a proposal on behalf of a signer
+- [x] `cancelProposal` — Cancel a proposal on behalf of a signer (+ program method `cancel_proposal`; requires the proposal be Approved; systemProgram present for the proposal realloc, unlike approve/reject)
 - [x] `executeTransaction` — Execute a smart account transaction (+ program method `execute_transaction`; replays the stored message's account metas as remaining accounts; simple messages only — no ephemeral signers / ALTs)
 - [x] `executeTransactionSync` — Synchronously execute a transaction (+ program method `execute_transaction_sync`)
 
 ## Settings Transactions (autonomous accounts)
 
-- [ ] `createSettingsTransaction` — Create a settings transaction
-- [ ] `executeSettingsTransaction` — Execute a settings transaction
+- [x] `createSettingsTransaction` — Create a settings transaction (+ program method `create_settings_transaction`; autonomous accounts only; flat args `{ actions, memo }`; shares the Transaction PDA seeds)
+- [x] `closeSettingsTransaction` — Close a settings transaction and its proposal (+ program method `close_settings_transaction`; no consensus signer; closeable when the proposal is terminal or stale; rent collectors default to the on-chain stored values)
+- [x] `executeSettingsTransaction` — Execute a settings transaction (+ program method `execute_settings_transaction`; no args — actions read on-chain; always passes rent_payer + systemProgram for realloc safety; spending-limit actions append SpendingLimit PDAs as remaining accounts)
 - [x] `executeSettingsTransactionSync` — Synchronously execute a settings transaction (+ program method `execute_settings_transaction_sync`; all SettingsAction variants except SetArchivalAuthority, which is skipped with the archival feature)
-- [ ] `closeSettingsTransaction` — Close a settings transaction and its proposal
 
 ## Authority Actions (controlled accounts)
 
@@ -97,3 +97,4 @@ config authority. Not needed for normal smart account usage.
 - [x] `execute_transaction_sync` / `compose_execute_transaction_sync` — send-and-sign vault spend
 - [x] `get_transaction_address` / `get_proposal_address` — async lifecycle PDA derivation
 - [x] `get_transaction` / `get_proposal` — fetch + deserialize async lifecycle state (`Transaction#account_metas` reconstructs execute remaining accounts)
+- [x] `get_settings_transaction` — fetch + deserialize a SettingsTransaction (header only; resolves rent collector for close)
