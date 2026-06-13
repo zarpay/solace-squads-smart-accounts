@@ -45,10 +45,10 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
       @signature = connection.send_transaction(tx.serialize)
       connection.wait_for_confirmed_signature { @signature['result'] }
 
-      @settings_account = connection.get_account_info(@settings_address)
-      @settings = program.get_settings(settings_address: @settings_address)
+      @settings_account        = connection.get_account_info(@settings_address)
+      @settings                = program.get_settings(settings_address: @settings_address)
       @treasury_ending_balance = connection.get_balance(@program_config.treasury)
-      @program_config_after = program.get_program_config
+      @program_config_after    = program.get_program_config
     end
 
     describe 'transaction effects' do
@@ -134,7 +134,7 @@ describe Solace::Composers::SquadsSmartAccountsCreateSmartAccountComposer do
       @signature = connection.send_transaction(tx.serialize)
       connection.wait_for_confirmed_signature { @signature['result'] }
 
-      @settings_account = connection.get_account_info(@settings_address)
+      @settings_account       = connection.get_account_info(@settings_address)
       @payer_ending_balance   = connection.get_balance(payer.address)
       @creator_ending_balance = connection.get_balance(creator.address)
     end

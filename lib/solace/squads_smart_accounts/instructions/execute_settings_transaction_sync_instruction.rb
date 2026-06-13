@@ -58,6 +58,7 @@ module Solace
               *signer_indices,
               *spending_limit_indices
             ]
+
             ix.data = data(num_signers:, actions:, memo:)
           end
         end

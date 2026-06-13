@@ -76,6 +76,7 @@ module Solace
               token_program_index,
               program_index
             ]
+
             ix.data = data(amount:, decimals:, memo:)
           end
         end

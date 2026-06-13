@@ -46,6 +46,7 @@ module Solace
               system_program_index,
               program_index
             ]
+
             ix.data = data(new_signer:, memo:)
           end
         end

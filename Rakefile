@@ -8,7 +8,7 @@ Rake::TestTask.new(:test) do |t|
   t.libs << 'lib'
   t.libs << 'test'
   t.test_files = FileList['test/**/*_test.rb', 'test/test_setup.rb']
-  t.verbose = true
+  t.verbose    = true
 end
 
 namespace :idl do

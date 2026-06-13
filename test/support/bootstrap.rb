@@ -6,7 +6,7 @@
 # only waits for confirmation and the mints are (re)created unconditionally —
 # nothing needs to survive a restart. Airdrops are idempotent.
 
-BOOTSTRAP_LAMPORTS = 10_000_000_000 # 10 SOL per fixture account
+BOOTSTRAP_LAMPORTS      = 10_000_000_000 # 10 SOL per fixture account
 BOOTSTRAP_MINT_DECIMALS = 6 # shared decimals for both fixture mints
 
 @bootstrap_connection = Solace::Connection.new
@@ -24,7 +24,7 @@ end
 # Create the SPL Token and Token-2022 mints at their fixture addresses. The mint
 # keypairs are fixtures so their addresses are stable across runs; the
 # mint-authority fixture is the mint + freeze authority for both.
-@bootstrap_payer = Solace::SquadsSmartAccounts::Test::Fixtures.load_keypair('payer')
+@bootstrap_payer          = Solace::SquadsSmartAccounts::Test::Fixtures.load_keypair('payer')
 @bootstrap_mint_authority = Solace::SquadsSmartAccounts::Test::Fixtures.load_keypair('mint-authority')
 
 {

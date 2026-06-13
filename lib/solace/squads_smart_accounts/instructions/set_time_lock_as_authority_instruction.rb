@@ -47,6 +47,7 @@ module Solace
               system_program_index,
               program_index
             ]
+
             ix.data = data(time_lock:, memo:)
           end
         end

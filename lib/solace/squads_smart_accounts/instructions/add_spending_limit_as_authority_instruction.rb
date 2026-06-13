@@ -66,9 +66,17 @@ module Solace
               system_program_index,
               program_index
             ]
+
             ix.data = data(
-              seed:, account_index:, mint:, amount:, period:,
-              signers:, destinations:, expiration:, memo:
+              seed:,
+              account_index:,
+              mint:,
+              amount:,
+              period:,
+              signers:,
+              destinations:,
+              expiration:,
+              memo:
             )
           end
         end

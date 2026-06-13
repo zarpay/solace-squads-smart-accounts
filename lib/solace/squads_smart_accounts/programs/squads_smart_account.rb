@@ -151,7 +151,7 @@ module Solace
       def next_smart_account
         settings_seed = get_program_config.smart_account_index + 1
 
-        settings_address, = get_settings_address(settings_seed:)
+        settings_address,      = get_settings_address(settings_seed:)
         smart_account_address, = get_smart_account_address(settings_address:)
 
         Solace::SquadsSmartAccounts::SmartAccountIdentity.new(

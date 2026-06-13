@@ -53,3 +53,7 @@ Style/HashSyntax:
 # Align hash values in a column (table style) for multi-line hash literals.
 Layout/HashAlignment:
   EnforcedColonStyle: table
+
+# Enforce column alignment of consecutive `=` assignments.
+Layout/ExtraSpacing:
+  ForceEqualSignAlignment: true

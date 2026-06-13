@@ -50,6 +50,7 @@ module Solace
               *signer_indices,
               *remaining_account_indices
             ]
+
             ix.data = data(
               account_index:,
               num_signers:,

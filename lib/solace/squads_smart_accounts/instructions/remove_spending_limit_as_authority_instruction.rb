@@ -45,6 +45,7 @@ module Solace
               rent_collector_index,
               program_index
             ]
+
             ix.data = data(memo:)
           end
         end

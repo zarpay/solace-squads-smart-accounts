@@ -40,7 +40,7 @@ describe Solace::Composers::SquadsSmartAccountsRemoveSpendingLimitAsAuthorityCom
       )
 
       # A fresh rent collector proves the refund went to the named account.
-      @rent_collector = Solace::Keypair.generate
+      @rent_collector      = Solace::Keypair.generate
       @spending_limit_rent = connection.get_balance(@spending_limit_address)
 
       composer = Solace::Composers::SquadsSmartAccountsRemoveSpendingLimitAsAuthorityComposer.new(

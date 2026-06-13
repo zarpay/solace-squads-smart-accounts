@@ -5,13 +5,13 @@ require_relative '../test_helper'
 describe Solace::Programs::SquadsSmartAccount do
   let(:klass) { Solace::Programs::SquadsSmartAccount }
 
-  let(:fixtures) { Solace::SquadsSmartAccounts::Test::Fixtures }
-  let(:permissions) { Solace::SquadsSmartAccounts::Permissions }
+  let(:fixtures)     { Solace::SquadsSmartAccounts::Test::Fixtures }
+  let(:permissions)  { Solace::SquadsSmartAccounts::Permissions }
   let(:signer_klass) { Solace::SquadsSmartAccounts::SmartAccountSigner }
 
   let(:connection) { Solace::Connection.new(commitment: 'processed') }
-  let(:program) { klass.new(connection:) }
-  let(:creator) { fixtures.load_keypair('creator') }
+  let(:program)    { klass.new(connection:) }
+  let(:creator)    { fixtures.load_keypair('creator') }
 
   # Fixtures
   let(:payer) { fixtures.load_keypair('payer') }
@@ -164,7 +164,7 @@ describe Solace::Programs::SquadsSmartAccount do
 
     describe 'when a separate sponsor pays for the transaction' do
       before(:all) do
-        @identity = program.next_smart_account
+        @identity     = program.next_smart_account
         @creation_fee = program.get_program_config.smart_account_creation_fee
 
         @payer_starting_balance   = connection.get_balance(payer.address)
@@ -1379,7 +1379,7 @@ describe Solace::Programs::SquadsSmartAccount do
       before(:all) do
         # The payer fixture acts as a funded, non-member delegate.
         @settings_address, @vault_address, @spending_limit_address = grant_funded_spending_limit(payer)
-        @recipient = Solace::Keypair.generate
+        @recipient                                                 = Solace::Keypair.generate
 
         @tx = program.use_spending_limit(
           payer:,
@@ -1413,7 +1413,7 @@ describe Solace::Programs::SquadsSmartAccount do
         @delegate = Solace::Keypair.generate
 
         @settings_address, @vault_address, @spending_limit_address = grant_funded_spending_limit(@delegate)
-        @recipient = Solace::Keypair.generate
+        @recipient                                                 = Solace::Keypair.generate
 
         @tx = program.use_spending_limit(
           payer:,
@@ -1485,7 +1485,7 @@ describe Solace::Programs::SquadsSmartAccount do
           authority:   mint_authority
         )
 
-        @recipient = Solace::Keypair.generate
+        @recipient       = Solace::Keypair.generate
         @destination_ata = create_ata(
           connection,
           payer:            creator,

@@ -186,7 +186,7 @@ describe Solace::Composers::SquadsSmartAccountsUseSpendingLimitComposer do
       authority:   mint_authority
     )
 
-    recipient = Solace::Keypair.generate
+    recipient       = Solace::Keypair.generate
     destination_ata = create_ata(
       connection,
       payer:            creator,

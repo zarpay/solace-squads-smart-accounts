@@ -59,6 +59,7 @@ module Solace
               program_index,
               settings_index
             ]
+
             ix.data = data(
               settings_authority:,
               threshold:,
@@ -73,7 +74,14 @@ module Solace
         # Encodes the `CreateSmartAccountArgs` struct in Borsh format.
         #
         # @return [Array<Integer>] Byte array of the encoded instruction data.
-        def self.data(settings_authority:, threshold:, signers:, time_lock:, rent_collector:, memo:)
+        def self.data(
+          settings_authority:,
+          threshold:,
+          signers:,
+          time_lock:,
+          rent_collector:,
+          memo:
+        )
           DISCRIMINATOR +
             Solace::Utils::Codecs.encode_option_pubkey(settings_authority) +
             Solace::Utils::Codecs.encode_le_u16(threshold).bytes +
