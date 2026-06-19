@@ -189,6 +189,14 @@ module Solace
         Array.new(decode_le_u32(stream)) { decode_pubkey(stream) }
       end
 
+      # Decodes a Borsh bytes / Vec<u8> field: u32 LE length prefix + raw bytes.
+      #
+      # @param stream [IO, StringIO] The stream to read from.
+      # @return [String] The raw bytes as a binary string.
+      def decode_bytes(stream)
+        stream.read(decode_le_u32(stream))
+      end
+
       # Decodes a u8 from 1 byte.
       #
       # @param stream [IO, StringIO] The stream to read from.

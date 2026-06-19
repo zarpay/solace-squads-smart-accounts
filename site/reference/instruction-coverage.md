@@ -6,8 +6,9 @@ title: Instruction Coverage
 
 The Squads Smart Account program exposes 37 instructions. This library implements the
 **22** needed for normal smart-account usage. `✅` = implemented (with a builder,
-composer, program method, and integration tests); `🚫` = deliberately skipped;
-`⬜` = not yet implemented.
+composer, program method, and integration tests); `✅ read-only` = decode/read
+support only (for events the program emits, never client-sent); `🚫` = deliberately
+skipped; `⬜` = not yet implemented.
 
 ## Core transaction lifecycle
 
@@ -52,6 +53,16 @@ composer, program method, and integration tests); `🚫` = deliberately skipped;
 | `useSpendingLimit` | ✅ | [Use a Spending Limit](/operations/spending-limits/use) |
 | `removeSpendingLimitAsAuthority` | ✅ | [Remove a Spending Limit](/operations/spending-limits/remove) |
 
+## Events (read side)
+
+`logEvent` is emitted by the program via self-CPI, never sent by a client, so it has
+no builder/composer. Its **read** side is implemented: the event it carries is decoded
+from a landed transaction's inner instructions.
+
+| Instruction | Status | Docs |
+| --- | --- | --- |
+| `logEvent` → `CreateSmartAccountEvent` | ✅ read-only | [`get_created_smart_account_event`](/reference/pda-and-fetchers#get-created-smart-account-event) — resolves [windowed creation](/operations/create-smart-account#race-free-creation-with-a-window) |
+
 ## Not yet implemented
 
 | Area | Instructions |
@@ -59,7 +70,6 @@ composer, program method, and integration tests); `🚫` = deliberately skipped;
 | Transaction buffers | `createTransactionBuffer`, `extendTransactionBuffer`, `closeTransactionBuffer`, `createTransactionFromBuffer` |
 | Batches | `createBatch`, `addTransactionToBatch`, `executeBatchTransaction`, `closeBatchTransaction`, `closeBatch` |
 | Program config (admin) | `initializeProgramConfig`, `setProgramConfigAuthority`, `setProgramConfigSmartAccountCreationFee`, `setProgramConfigTreasury` |
-| Other | `logEvent` |
 
 ## Known limitations
 

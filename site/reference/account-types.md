@@ -115,6 +115,32 @@ The global program config, from `get_program_config`.
 | `smart_account_creation_fee` | Integer | Lamports charged per account creation. |
 | `treasury` | String | Pubkey that receives creation fees. |
 
+## Event types
+
+These are decoded from a landed transaction's inner instructions rather than from an
+account — see [`get_created_smart_account_event`](/reference/pda-and-fetchers#get-created-smart-account-event).
+
+### `CreateSmartAccountEvent`
+
+The event the program emits on creation, from `get_created_smart_account_event`.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `new_settings_pubkey` | String | Base58 address of the settings account the program created. |
+
+The on-chain event also carries the full new `Settings`, but only the pubkey is
+decoded — derive the vault from it, or `get_settings` for the rest.
+
+### `LogEventArgsV2`
+
+The arguments of the program's `logEvent` self-CPI — a single Borsh-encoded
+`SmartAccountEvent`. The deserialization layer the fetcher uses internally; you
+rarely touch it directly.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `event` | String | Borsh-encoded `SmartAccountEvent` bytes (binary string). |
+
 ## Value objects
 
 ### `SmartAccountSigner`
