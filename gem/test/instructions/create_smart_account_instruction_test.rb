@@ -47,6 +47,25 @@ describe Solace::SquadsSmartAccounts::Instructions::CreateSmartAccountInstructio
       assert_equal [0, 1, 2, 3, 4, 5], ix.accounts
     end
 
+    it 'appends every candidate when settings_index is an array (windowed)' do
+      windowed = klass.build(
+        settings_authority:   nil,
+        threshold:            1,
+        signers:,
+        time_lock:            0,
+        rent_collector:       nil,
+        memo:                 nil,
+        program_config_index: 0,
+        treasury_index:       1,
+        creator_index:        2,
+        system_program_index: 3,
+        program_index:        4,
+        settings_index:       [5, 6, 7]
+      )
+
+      assert_equal [0, 1, 2, 3, 4, 5, 6, 7], windowed.accounts
+    end
+
     it 'data begins with the correct Anchor discriminator' do
       assert_equal klass::DISCRIMINATOR, ix.data.first(8)
     end

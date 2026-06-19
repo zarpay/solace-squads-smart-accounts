@@ -8,7 +8,7 @@ method on `Solace::Programs::SquadsSmartAccount`.
 
 ## Core Transaction Lifecycle
 
-- [x] `createSmartAccount` — Create a smart account (+ program method `create_smart_account`)
+- [x] `createSmartAccount` — Create a smart account (+ program method `create_smart_account`; supports a `window:` of candidate settings PDAs for race-free creation)
 - [x] `createTransaction` — Create a new vault transaction (+ program method `create_transaction`; simple messages only — no ephemeral signers / ALTs. NOTE: deployed program uses the newer enum args + 6th `program` account, not the stale bundled IDL)
 - [x] `createProposal` — Create a new proposal (+ program method `create_proposal`)
 - [x] `activateProposal` — Update proposal status from Draft to Active (+ program method `activate_proposal`; the lone proposal instruction with NO trailing `program` account)
@@ -86,14 +86,19 @@ config authority. Not needed for normal smart account usage.
 
 ## Other
 
-- [ ] `logEvent` — Log an event (used via CPI by the program itself)
+- [x] `logEvent` — Log an event (emitted by the program via self-CPI). Not built
+      (never sent by a client); the **read** side is implemented: its args are
+      decoded from a landed transaction's inner instructions via the
+      `LogEventArgsV2` + `CreateSmartAccountEvent` types to resolve windowed creation.
 
 ## Program Layer (supporting surface, not IDL instructions)
 
 - [x] `get_settings_address` / `get_smart_account_address` — PDA derivation
 - [x] `get_program_config` / `get_settings` — fetch + deserialize account state
 - [x] `next_smart_account` — full identity (seed, settings address, vault address) for client indexing
-- [x] `create_smart_account` / `compose_create_smart_account` — send-and-sign creation
+- [x] `next_smart_account_candidates` — a window of consecutive candidate identities for race-free creation
+- [x] `create_smart_account` / `compose_create_smart_account` — send-and-sign creation (`window:` offers a candidate window for race-free creation)
+- [x] `get_created_smart_account_event` — fetch + decode the CreateSmartAccountEvent to resolve which windowed candidate the program created
 - [x] `execute_transaction_sync` / `compose_execute_transaction_sync` — send-and-sign vault spend
 - [x] `get_transaction_address` / `get_proposal_address` — async lifecycle PDA derivation
 - [x] `get_transaction` / `get_proposal` — fetch + deserialize async lifecycle state (`Transaction#account_metas` reconstructs execute remaining accounts)

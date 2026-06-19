@@ -7,8 +7,12 @@ module Solace
     # Required params:
     #   :creator   [String]                        Base58 pubkey of the account creating the smart account.
     #   :treasury  [String]                        Base58 pubkey of the treasury (from ProgramConfig).
-    #   :settings  [String]                        Base58 pubkey of the settings PDA to be created —
-    #                                              derive via Programs::SquadsSmartAccount.get_settings_address.
+    #   :settings  [#to_s, Array<#to_s>]           The settings PDA(s) to offer as remaining accounts.
+    #                                              Pass a single address for deterministic creation
+    #                                              (derive via Programs::SquadsSmartAccount.get_settings_address),
+    #                                              or an array (a "window" of candidates) for race-free creation —
+    #                                              the program initializes whichever matches the incremented
+    #                                              counter. See Programs::SquadsSmartAccount.next_smart_account_candidates.
     #   :threshold [Integer]                       Number of approvals required to execute a transaction.
     #   :signers   [Array<SquadsSmartAccounts::SmartAccountSigner>]  Signers on the smart account.
     #   :time_lock [Integer]                       Seconds between proposal and execution (0 to disable).
@@ -32,11 +36,14 @@ module Solace
         params[:creator].to_s
       end
 
-      # Extracts the settings address from the params
+      # Normalizes the :settings param to an array of base58 addresses.
       #
-      # @return [String] The settings address
+      # Accepts a single pubkey (deterministic creation) or an array of candidate
+      # pubkeys (windowed, race-free creation), so both flows share this composer.
+      #
+      # @return [Array<String>] The settings address(es), in seed order.
       def settings
-        params[:settings].to_s
+        Array(params[:settings]).map(&:to_s)
       end
 
       # Returns the program config address from the constants
@@ -111,7 +118,9 @@ module Solace
         # Writable accounts
         account_context.add_writable_nonsigner(config)
         account_context.add_writable_nonsigner(treasury)
-        account_context.add_writable_nonsigner(settings)
+
+        # Each candidate settings PDA is offered as a writable remaining account.
+        settings.each { |address| account_context.add_writable_nonsigner(address) }
 
         # Writable signers
         account_context.add_writable_signer(creator)
@@ -134,7 +143,7 @@ module Solace
           creator_index:        context.index_of(creator),
           system_program_index: context.index_of(system_program),
           program_index:        context.index_of(program_id),
-          settings_index:       context.index_of(settings)
+          settings_index:       settings.map { |address| context.index_of(address) }
         )
       end
     end

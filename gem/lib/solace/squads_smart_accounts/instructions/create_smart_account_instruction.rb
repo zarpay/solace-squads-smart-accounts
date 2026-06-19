@@ -14,7 +14,9 @@ module Solace
       #   2. creator        — writable, signer
       #   3. systemProgram  — readonly, non-signer
       #   4. program        — readonly, non-signer
-      #   5. settings       — writable, non-signer (remaining account — PDA to be created)
+      #   5+. settings      — writable, non-signer (one or more candidate settings
+      #                       PDAs as remaining accounts; the program initializes
+      #                       the one matching the freshly incremented counter)
       class CreateSmartAccountInstruction
         # 8-byte Anchor discriminator: SHA256("global:create_smart_account")[0..7]
         DISCRIMINATOR = [197, 102, 253, 231, 77, 84, 50, 17].freeze
@@ -33,7 +35,9 @@ module Solace
         # @param creator_index [Integer] Account index of creator.
         # @param system_program_index [Integer] Account index of systemProgram.
         # @param program_index [Integer] Account index of the Squads program.
-        # @param settings_index [Integer] Account index of the settings PDA to be created.
+        # @param settings_index [Integer, Array<Integer>] Account index/indices of the
+        #   candidate settings PDA(s), appended as remaining accounts. Pass a single
+        #   index for deterministic creation, or an array (a window) for race-free creation.
         # @return [Solace::Instruction]
         def self.build(
           settings_authority:,
@@ -57,7 +61,7 @@ module Solace
               creator_index,
               system_program_index,
               program_index,
-              settings_index
+              *Array(settings_index)
             ]
 
             ix.data = data(

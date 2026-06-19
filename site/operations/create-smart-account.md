@@ -11,7 +11,8 @@ it, so no vault is created here (see [Settings vs. Smart Account](/concepts/sett
 The settings PDA is derived from a seed equal to the program config's running index
 + 1, so derive the next identity with [`next_smart_account`](/reference/pda-and-fetchers)
 first and pass its seed. If another account is created before yours lands, the
-transaction fails cleanly with `MissingAccount` — re-fetch and retry.
+transaction fails cleanly with `MissingAccount` — re-fetch and retry, or avoid the
+race entirely with a [candidate window](#race-free-creation-with-a-window).
 
 ## Program method — `create_smart_account`
 
@@ -25,6 +26,7 @@ The one-call path: derives the settings PDA and treasury, builds, signs (`payer`
 | `creator` | #to_s · Keypair | yes | — | The account creating the smart account; co-signs. Need not be a member. |
 | `threshold` | Integer | yes | — | Approvals required to execute a transaction. Must be ≥ 1 and ≤ the number of Vote-holding signers. |
 | `signers` | Array\<SmartAccountSigner\> | yes | — | Initial members and their permission masks. Must include ≥ 1 each of Initiate, Vote, Execute. |
+| `window` | Integer | no | `1` | Number of consecutive candidate settings PDAs to offer. `> 1` makes creation [race-free](#race-free-creation-with-a-window). |
 | `time_lock` | Integer | no | `0` | Seconds between a proposal's approval and when it may execute. |
 | `settings_authority` | #to_s | no | `nil` | Reconfiguration authority for a **controlled** account. Omit (`nil`) for an **autonomous** account. |
 | `rent_collector` | #to_s | no | `nil` | Pubkey that reclaims rent when accounts are closed. |
@@ -50,6 +52,65 @@ program.create_smart_account(
 )
 ```
 
+## Race-free creation with a window
+
+The deterministic path bets on a single seed (`index + 1`). Under concurrency that
+bet loses: if other smart accounts are created between your `get_program_config`
+read and your transaction landing, the program's incremented index no longer matches
+your one derived PDA and the transaction fails with `MissingAccount`.
+
+To create race-free, pass `window:` to **offer a window of consecutive candidate
+PDAs** (seeds `index+1 … index+window`). The program increments its counter and
+initializes whichever candidate matches the new value — so the transaction succeeds
+as long as the true index lands inside the window, no matter how many accounts were
+created concurrently. This mirrors how the Squads team's own SDK creates accounts.
+
+Because the winning address isn't known until the transaction lands, resolve it
+afterward from the emitted event with
+[`get_created_smart_account_event`](/reference/pda-and-fetchers#get-created-smart-account-event),
+then match it back to your candidates to recover the seed and vault.
+
+```ruby
+# 1. Derive the window of possible identities (persist these if indexing).
+candidates = program.next_smart_account_candidates(count: 20)
+
+# 2. Offer the whole window. Creation succeeds even if other accounts are
+#    created before this transaction lands.
+tx = program.create_smart_account(
+  payer:         creator,
+  settings_seed: candidates.first.settings_seed,
+  window:        20,
+  creator:,
+  threshold:     1,
+  signers:       [
+    Solace::SquadsSmartAccounts::SmartAccountSigner.new(
+      pubkey:     creator.address,
+      permission: Solace::SquadsSmartAccounts::Permissions::ALL
+    )
+  ]
+)
+connection.wait_for_confirmed_signature { tx.signature }
+
+# 3. Resolve which candidate the program actually created.
+event    = program.get_created_smart_account_event(signature: tx.signature)
+identity = candidates.find { |c| c.settings_address == event.new_settings_pubkey }
+
+identity.settings_seed         # => the seed the program landed on (index it bumped to)
+identity.settings_address      # => event.new_settings_pubkey
+identity.smart_account_address # => its default vault
+```
+
+The integration suite confirms this end-to-end: with a window in flight, creating
+several more accounts out-of-band first, the program lands the new settings account
+on the candidate at the drifted offset, and the event returns exactly that seed
+(index) and address.
+
+::: tip
+Only winning candidate is ever initialized — the unused candidates cost transaction
+size, not rent. A window of ~20 absorbs heavy concurrency while staying well under
+the transaction account limit.
+:::
+
 ## Composer — `SquadsSmartAccountsCreateSmartAccountComposer`
 
 Use the composer when you want control over the fee payer and signing, or to batch
@@ -61,7 +122,7 @@ first (the program method does this for you via `get_program_config` and
 | --- | --- | --- | --- | --- |
 | `creator` | #to_s | yes | — | Base58 pubkey creating the account. |
 | `treasury` | #to_s | yes | — | Treasury pubkey, from `program.get_program_config.treasury`. |
-| `settings` | #to_s | yes | — | The settings PDA to create — from `get_settings_address`. |
+| `settings` | #to_s · Array\<#to_s\> | yes | — | The settings PDA to create — from `get_settings_address`. Pass an array (a candidate window) for [race-free creation](#race-free-creation-with-a-window). |
 | `threshold` | Integer | yes | — | Approvals required to execute. |
 | `signers` | Array\<SmartAccountSigner\> | yes | — | Initial members + permission masks. |
 | `time_lock` | Integer | yes | — | Seconds between approval and execution (`0` to disable). |
@@ -118,7 +179,7 @@ with `context.index_of(...)`).
 | `creator_index` | Integer | yes | — | Index of the creator. |
 | `system_program_index` | Integer | yes | — | Index of the System program. |
 | `program_index` | Integer | yes | — | Index of the Squads program (the invoked program). |
-| `settings_index` | Integer | yes | — | Index of the settings PDA. |
+| `settings_index` | Integer · Array\<Integer\> | yes | — | Index of the settings PDA, or an array of candidate indices (the window) appended as remaining accounts. |
 
 ```ruby
 ix = Solace::SquadsSmartAccounts::Instructions::CreateSmartAccountInstruction.build(

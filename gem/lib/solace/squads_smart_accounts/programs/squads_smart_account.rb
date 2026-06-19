@@ -17,6 +17,13 @@ module Solace
     #
     # @see Solace::SquadsSmartAccounts
     class SquadsSmartAccount < Base
+      # Default number of candidate settings PDAs offered by windowed creation.
+      # The on-chain counter must land inside this window for the transaction to
+      # succeed; ~20 absorbs heavy concurrency while staying well under the
+      # transaction account limit. Non-winning candidates are never initialized,
+      # so a larger window costs transaction size only, never rent.
+      DEFAULT_CREATION_WINDOW = 20
+
       class << self
         # Gets the address of the settings PDA for a given settings seed.
         #
@@ -229,6 +236,36 @@ module Solace
         )
       end
 
+      # Fetches a confirmed createSmartAccount transaction and deserializes the
+      # CreateSmartAccountEvent it emitted, revealing the settings address the
+      # program actually created.
+      #
+      # This is how a windowed creation (see {#compose_create_smart_account} with
+      # `window > 1`) learns which candidate won: the program picks one of the
+      # offered PDAs, observable only after the transaction lands. Match the
+      # returned `new_settings_pubkey` against your {#next_smart_account_candidates}
+      # to recover the seed and vault.
+      #
+      # @param signature [String] Signature of the confirmed createSmartAccount transaction.
+      # @return [SquadsSmartAccounts::CreateSmartAccountEvent] The deserialized event.
+      # @raise [RuntimeError] If the transaction is missing or carries no logEvent.
+      def get_created_smart_account_event(signature:)
+        transaction = connection.get_transaction(
+          signature,
+          commitment:                     'confirmed',
+          encoding:                       'json',
+          maxSupportedTransactionVersion: 0
+        )
+        raise "Transaction not found for signature #{signature}" unless transaction
+
+        io = log_event_stream(transaction)
+        raise "No logEvent inner instruction found in transaction #{signature}" unless io
+
+        args = Solace::SquadsSmartAccounts::LogEventArgsV2.deserialize(io)
+
+        Solace::SquadsSmartAccounts::CreateSmartAccountEvent.deserialize(StringIO.new(args.event))
+      end
+
       # Gets the full deterministic identity of the next smart account to be
       # created: the settings seed, settings address, and default vault address.
       #
@@ -250,6 +287,33 @@ module Solace
           settings_address:,
           smart_account_address:
         )
+      end
+
+      # Gets a window of candidate identities for race-free creation: the next
+      # `count` consecutive smart accounts (seeds `index+1 .. index+count`).
+      #
+      # Pass the candidates' settings addresses to {#create_smart_account_windowed},
+      # which offers them all and lets the program pick whichever matches the
+      # freshly incremented counter — so creation succeeds even if other accounts
+      # are created concurrently, as long as the true index lands in the window.
+      #
+      # @param count [Integer] Size of the candidate window (default: {DEFAULT_CREATION_WINDOW}).
+      # @return [Array<SquadsSmartAccounts::SmartAccountIdentity>] Candidate identities, in seed order.
+      def next_smart_account_candidates(count: DEFAULT_CREATION_WINDOW)
+        start_seed = get_program_config.smart_account_index + 1
+
+        Array.new(count) do |offset|
+          settings_seed = start_seed + offset
+
+          settings_address,      = get_settings_address(settings_seed:)
+          smart_account_address, = get_smart_account_address(settings_address:)
+
+          Solace::SquadsSmartAccounts::SmartAccountIdentity.new(
+            settings_seed:,
+            settings_address:,
+            smart_account_address:
+          )
+        end
       end
 
       # Creates a new smart account, signs it, and (optionally) sends it.
@@ -300,10 +364,18 @@ module Solace
       # clients can derive and persist the settings and vault addresses before
       # sending the transaction.
       #
-      # @param settings_seed [Integer] The seed for the settings PDA (see {#next_settings_seed}).
+      # With the default `window: 1` this offers a single settings PDA and is
+      # subject to the same races as {#next_smart_account}. Pass `window > 1` to
+      # offer a window of consecutive candidate PDAs (seeds `settings_seed ..
+      # settings_seed + window - 1`); the program initializes whichever matches the
+      # freshly incremented counter, so creation tolerates concurrent creations.
+      # The chosen address is then resolved via {#get_created_smart_account_event}.
+      #
+      # @param settings_seed [Integer] The (starting) seed for the settings PDA (see {#next_settings_seed}).
       # @param creator [#to_s, Keypair] The account creating the smart account (must sign).
       # @param threshold [Integer] Number of approvals required to execute a transaction.
       # @param signers [Array<SquadsSmartAccounts::SmartAccountSigner>] Signers on the smart account.
+      # @param window [Integer] (Optional) Number of candidate PDAs to offer (default: 1).
       # @param time_lock [Integer] (Optional) Seconds between proposal and execution (default: 0).
       # @param settings_authority [#to_s] (Optional) Pubkey of the reconfiguration authority.
       # @param rent_collector [#to_s] (Optional) Pubkey for reclaiming rent on closed accounts.
@@ -314,6 +386,7 @@ module Solace
         creator:,
         threshold:,
         signers:,
+        window: 1,
         time_lock: 0,
         settings_authority: nil,
         rent_collector: nil,
@@ -321,12 +394,15 @@ module Solace
       )
         program_config = get_program_config
 
-        settings_address, = get_settings_address(settings_seed:)
+        settings = Array.new(window) do |offset|
+          address, = get_settings_address(settings_seed: settings_seed + offset)
+          address
+        end
 
         create_smart_account_ix = Composers::SquadsSmartAccountsCreateSmartAccountComposer.new(
           creator:,
           treasury:           program_config.treasury,
-          settings:           settings_address,
+          settings:,
           threshold:,
           signers:,
           time_lock:,
@@ -1812,6 +1888,30 @@ module Solace
       end
 
       private
+
+      # Locates the program's `logEvent` self-CPI among a landed transaction's
+      # inner instructions and returns its args as a bytestream (the instruction
+      # data past the 8-byte discriminator), or nil if absent. The instruction is
+      # identified by its stable discriminator, so the match is exact.
+      #
+      # @param transaction [Hash] The raw getTransaction result.
+      # @return [StringIO, nil] Stream positioned at the start of the LogEventArgsV2.
+      def log_event_stream(transaction)
+        groups = transaction.dig('meta', 'innerInstructions') || []
+
+        groups.each do |group|
+          Array(group['instructions']).each do |ix|
+            next if ix['data'].nil?
+
+            binary = Solace::Utils::Codecs.base58_to_binary(ix['data'])
+            next unless binary.byteslice(0, 8).bytes == Solace::SquadsSmartAccounts::LogEventArgsV2::DISCRIMINATOR
+
+            return StringIO.new(binary.byteslice(8..))
+          end
+        end
+
+        nil
+      end
 
       # Derives the vault and destination ATAs for a token spending-limit spend.
       #

@@ -43,6 +43,7 @@ Each fetches and deserializes an on-chain account into a value object (see
 | `get_settings_transaction` | `transaction_address:` | `SettingsTransaction` |
 | `get_proposal` | `proposal_address:` | `Proposal` |
 | `get_spending_limit` | `spending_limit_address:` | `SpendingLimit` |
+| `get_created_smart_account_event` | `signature:` | `CreateSmartAccountEvent` (see [below](#get-created-smart-account-event)) |
 
 ## `next_smart_account`
 
@@ -58,4 +59,36 @@ identity.smart_account_address # => base58 default vault PDA (account index 0)
 ```
 
 > Subject to races: if another account is created between this call and execution, the
-> creation fails cleanly with `MissingAccount` — re-fetch and retry.
+> creation fails cleanly with `MissingAccount` — re-fetch and retry, or create
+> race-free with `next_smart_account_candidates` + a window (below).
+
+## `next_smart_account_candidates`
+
+Returns a window of consecutive candidate identities — the next `count` smart
+accounts (default 20) — for [race-free creation](/operations/create-smart-account#race-free-creation-with-a-window).
+Offer them all via `create_smart_account(window:)`; the program initializes whichever
+matches the freshly incremented index, so creation succeeds even under concurrency.
+
+```ruby
+candidates = program.next_smart_account_candidates(count: 20)
+candidates.first.settings_seed # => Integer, pass as create_smart_account's settings_seed
+candidates.map(&:settings_address) # => the 20 possible settings PDAs, in seed order
+```
+
+## `get_created_smart_account_event` {#get-created-smart-account-event}
+
+Fetches a confirmed `createSmartAccount` **transaction** (not an account) and decodes
+the `CreateSmartAccountEvent` the program emitted via its `logEvent` self-CPI. This is
+how a windowed creation learns which candidate the program actually created — the
+choice is only observable after the transaction lands.
+
+```ruby
+event = program.get_created_smart_account_event(signature: tx.signature)
+event.new_settings_pubkey # => base58 settings address the program created
+
+# Match it back to the offered window to recover the seed and vault.
+identity = candidates.find { |c| c.settings_address == event.new_settings_pubkey }
+```
+
+> The event is identified by the stable `logEvent` instruction discriminator and
+> decoded into [`LogEventArgsV2`](/reference/account-types) → `CreateSmartAccountEvent`.
