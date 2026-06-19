@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-06-19
+
+### Added
+
+- **Race-free smart account creation.** `create_smart_account` and
+  `compose_create_smart_account` accept a `window:` argument that offers a window of
+  consecutive candidate settings PDAs as remaining accounts; the program initializes
+  whichever matches the freshly incremented index, so creation succeeds even when
+  other accounts are created concurrently. Defaults to `1` (the previous
+  single-PDA behavior — fully backwards compatible).
+- `next_smart_account_candidates` returns the candidate window for clients to persist
+  and match against, and `get_created_smart_account_event` decodes the
+  `CreateSmartAccountEvent` the program emits via its `logEvent` self-CPI to resolve
+  which candidate was created.
+- New value types `LogEventArgsV2` and `CreateSmartAccountEvent`.
+
 ## [0.1.0] - 2026-06-14
 
 Initial release — covers 22 of the 37 Squads Smart Account program instructions, every
@@ -42,4 +58,5 @@ flow needed for normal smart-account usage.
 - Address Lookup Tables (ALTs) and ephemeral signers are not supported.
 - Transaction buffers and batches are not implemented.
 
+[0.1.1]: https://github.com/zarpay/solace-squads-smart-accounts/releases/tag/v0.1.1
 [0.1.0]: https://github.com/zarpay/solace-squads-smart-accounts/releases/tag/v0.1.0
