@@ -58,7 +58,7 @@ GEM
       rubocop (~> 1.72)
       yard
     ruby-progressbar (1.13.0)
-    solace (0.1.5)
+    solace (0.1.6)
       base58 (~> 0.2)
       ffi (~> 1.15)
       rbnacl (~> 7.0)
@@ -120,7 +120,7 @@ CHECKSUMS
   rubocop-ast (1.49.1) sha256=4412f3ee70f6fe4546cc489548e0f6fcf76cafcfa80fa03af67098ffed755035
   rubocop-yard (1.2.0) sha256=a749b1feccd16ca049d1c65c4b62dbfc8ce39904bfdbc6e5c08f6b5dc0422dc4
   ruby-progressbar (1.13.0) sha256=80fc9c47a9b640d6834e0dc7b3c94c9df37f08cb072b7761e4a71e22cff29b33
-  solace (0.1.5) sha256=9ec8e8843dc7a7fab82fe89b809796361abefb7f905d36b1e0299ebab5df8223
+  solace (0.1.6) sha256=f3c8bf622a1c33758f22b92863b18776a1e28738864b8d208dfc83cf1cc0f0ea
   solace-squads-smart-accounts (0.1.1)
   unicode-display_width (3.2.0) sha256=0cdd96b5681a5949cdbc2c55e7b420facae74c4aaf9a9815eee1087cb1853c42
   unicode-emoji (4.2.0) sha256=519e69150f75652e40bf736106cfbc8f0f73aa3fb6a65afe62fefa7f80b0f80f
